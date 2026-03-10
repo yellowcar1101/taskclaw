@@ -111,7 +111,7 @@
   async function doSkipOccurrence() {
     if (!task) return;
     act(async () => {
-      const updated = await api.duplicateTask(task!.id); // placeholder
+      const updated = await api.skipOccurrence(task!.id);
       allTasks.update(ts => ts.map(t => t.id === task!.id ? updated : t));
     });
   }

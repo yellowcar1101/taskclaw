@@ -439,3 +439,50 @@ pub fn sort_subtasks(state: State<DbState>, parent_id: Option<String>, sort_by: 
     }
     Ok(())
 }
+
+// ── skip_occurrence ────────────────────────────────────────────────────────────
+// Advances a recurring task to the next occurrence by updating its due_date
+// and start_date based on the recurrence_rule JSON.
+// recurrence_rule format: {"freq":"daily"|"weekly"|"monthly"|"yearly","interval":N}
+
+fn advance_date(date_str: &str, days: i64) -> Option<String> {
+    use chrono::NaiveDate;
+    let d = NaiveDate::parse_from_str(&date_str[..10], "%Y-%m-%d").ok()?;
+    let advanced = d + chrono::Duration::days(days);
+    Some(advanced.format("%Y-%m-%d").to_string())
+}
+
+fn next_occurrence_days(rule: &serde_json::Value) -> Option<i64> {
+    let freq = rule["freq"].as_str()?;
+    let interval = rule["interval"].as_i64().unwrap_or(1);
+    let days: i64 = match freq {
+        "daily"   => interval,
+        "weekly"  => interval * 7,
+        "monthly" => interval * 30,
+        "yearly"  => interval * 365,
+        _         => return None,
+    };
+    Some(days)
+}
+
+#[tauri::command]
+pub fn skip_occurrence(state: State<DbState>, id: String) -> Result<Task, String> {
+    let conn = state.0.lock().unwrap();
+    let task = get_task_by_id(&conn, &id).ok_or("task not found")?;
+
+    let rule_str = task.recurrence_rule.as_deref().ok_or("task has no recurrence rule")?;
+    let rule: serde_json::Value = serde_json::from_str(rule_str)
+        .map_err(|_| "invalid recurrence_rule JSON")?;
+    let days = next_occurrence_days(&rule).ok_or("unsupported recurrence frequency")?;
+
+    let new_due = task.due_date.as_deref().and_then(|d| advance_date(d, days));
+    let new_start = task.start_date.as_deref().and_then(|d| advance_date(d, days));
+
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "UPDATE tasks SET due_date=?1, start_date=?2, updated_at=?3 WHERE id=?4",
+        params![new_due, new_start, now, id],
+    ).map_err(|e| e.to_string())?;
+
+    get_task_by_id(&conn, &id).ok_or_else(|| "task not found after update".into())
+}

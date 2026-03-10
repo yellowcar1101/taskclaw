@@ -42,6 +42,9 @@ export const api = {
   sortSubtasks: (parentId: string | null, sortBy: string, sortDir: string): Promise<void> =>
     invoke('sort_subtasks', { parentId, sortBy, sortDir }),
 
+  skipOccurrence: (id: string): Promise<Task> =>
+    invoke('skip_occurrence', { id }),
+
   // ── Flags ──────────────────────────────────────────────────────────────
   getFlags: (): Promise<Flag[]> =>
     invoke('get_flags'),

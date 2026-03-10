@@ -28,6 +28,7 @@ pub fn run() {
             reorder_tasks,
             duplicate_task,
             sort_subtasks,
+            skip_occurrence,
             // flags
             get_flags,
             create_flag,
