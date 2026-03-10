@@ -169,37 +169,32 @@
             bind:this={textarea}
             bind:value={text}
             class="rapid-textarea"
-            placeholder="Paste or type tasks here.
-Indentation creates sub-tasks (spaces or tabs).
+            placeholder="Paste or type tasks — indentation = subtasks.
 
-Parsing tokens (when 'Apply parsing' is on):
-  !FlagName    assign flag
-  #TagName     assign tag
-  s:DATE       start date
-  d:DATE       due date
-  r:DATE       reminder
-  *            starred
+Natural language (trailing date is parsed automatically):
+  Call Jim tomorrow 4pm
+  Send report in 3 days remind 10 min in advance
+  Organize party May 22 reminder May 21 3pm
+  &quot;Buy 3 boxes&quot; next Friday 9am remind me
 
-Dates: today  tomorrow  mon  +3d  +2w  2024-01-15
-Press Ctrl+Enter to import."
+Explicit tokens:
+  !FlagName   #TagName   *   -star   -fl<name>
+  s:DATE  d:DATE  r:DATE  -s  -d
+  remind / rmd [<when> | N min in advance]
+
+Dates: today  tomorrow  mon  next Fri  in 3d  +2w  Jan26
+Ctrl+Enter to import."
             spellcheck="false"
           ></textarea>
 
           <div class="syntax-ref">
-            <span>Tokens:</span>
-            <code>!Flag</code>
-            <code>#tag</code>
-            <code>s:DATE</code>
-            <code>d:DATE</code>
-            <code>r:DATE</code>
-            <code>*</code>
+            <code>!Flag</code><code>#tag</code><code>@tag</code><code>*</code><code>-star</code>
+            <code>-fl&lt;name&gt;</code><code>-s</code><code>-d</code>
             <span class="sep">·</span>
-            <span>Dates:</span>
-            <code>today</code>
-            <code>tom</code>
-            <code>mon</code>
-            <code>+3d</code>
-            <code>+2w</code>
+            <code>remind / rmd</code><code>N min in advance</code>
+            <span class="sep">·</span>
+            <code>today</code><code>tom</code><code>mon</code><code>next Fri</code>
+            <code>in 3d</code><code>in 2w</code><code>Jan26</code><code>5/22</code>
           </div>
         </div>
 
