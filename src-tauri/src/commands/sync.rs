@@ -14,7 +14,6 @@ use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
-use std::sync::Mutex;
 use tauri::State;
 
 use crate::commands::tasks::DbState;
@@ -144,7 +143,7 @@ fn refresh_access_token(refresh_token: &str) -> Result<String, String> {
     }
     json["access_token"]
         .as_str()
-        .ok_or("no access_token in refresh response")
+        .ok_or_else(|| "no access_token in refresh response".to_string())
         .map(|s| s.to_string())
 }
 
