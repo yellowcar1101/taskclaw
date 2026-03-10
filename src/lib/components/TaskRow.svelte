@@ -2,10 +2,12 @@
   import { createEventDispatcher } from 'svelte';
   import type { Task } from '../types';
   import {
-    expanded, selected, editingId,
+    expanded, selected, editingId, contextMenu,
     toggleExpanded, setSelected, updateTask, deleteTask,
-    completeTask, moveTask, getChildren, reorderTasks, createTask
+    completeTask, moveTask, getChildren, reorderTasks, createTask,
+    outlineScrollToId, flags, tags
   } from '../stores/tasks';
+  import { parseCaption } from '../parsing';
 
   export let task: Task;
   export let depth: number = 0;
@@ -16,12 +18,24 @@
   let hovered = false;
   let editValue = '';
   let inputEl: HTMLInputElement;
+  let rowEl: HTMLDivElement;
+  let flashing = false;
 
   $: isExpanded = $expanded.has(task.id);
   $: isSelected = $selected.has(task.id);
   $: isEditing = $editingId === task.id;
   $: children = isExpanded ? getChildren(task.id) : [];
   $: myIndex = siblings.findIndex(s => s.id === task.id);
+
+  // Scroll-flash: watch outlineScrollToId
+  $: if ($outlineScrollToId === task.id) {
+    outlineScrollToId.set(null);
+    setTimeout(() => {
+      rowEl?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      flashing = true;
+      setTimeout(() => flashing = false, 800);
+    }, 50);
+  }
 
   function startEdit() {
     editValue = task.caption;
@@ -37,6 +51,22 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter' && e.altKey) {
+      // Alt+Enter: apply inline parsing to current edit value
+      e.preventDefault();
+      const parsed = parseCaption(editValue, $flags, $tags);
+      editValue = parsed.caption;
+      const updates: Record<string, unknown> = { caption: parsed.caption };
+      if (parsed.flagId) updates.flag_id = parsed.flagId;
+      if (parsed.tagIds.length) updates.tag_ids = parsed.tagIds;
+      if (parsed.starred) updates.starred = true;
+      if (parsed.startDate) updates.start_date = parsed.startDate;
+      if (parsed.dueDate) updates.due_date = parsed.dueDate;
+      if (parsed.reminderAt) updates.reminder_at = parsed.reminderAt;
+      updateTask(task.id, updates as any);
+      editingId.set(null);
+      return;
+    }
     if (e.key === 'Enter') { e.preventDefault(); commitEdit(); }
     if (e.key === 'Escape') { editingId.set(null); }
     if (e.key === 'Tab') {
@@ -48,6 +78,11 @@
 
   function onClick(e: MouseEvent) {
     setSelected(task.id, e.ctrlKey || e.metaKey);
+  }
+
+  function onContextMenu(e: MouseEvent) {
+    e.preventDefault();
+    contextMenu.set({ x: e.clientX, y: e.clientY, taskId: task.id });
   }
 
   async function onIndent() {
@@ -148,9 +183,12 @@
   class="task-row"
   class:selected={isSelected}
   class:dragging
+  class:flash={flashing}
   style="padding-left: {depth * 20 + 6}px"
+  bind:this={rowEl}
   on:click={onClick}
   on:dblclick={startEdit}
+  on:contextmenu={onContextMenu}
   on:mouseenter={() => hovered = true}
   on:mouseleave={() => hovered = false}
   draggable={true}
@@ -265,6 +303,11 @@
   .task-row:hover { background: var(--hover); }
   .task-row.selected { background: var(--selected); border-color: var(--accent-dim); }
   .task-row.dragging { opacity: 0.4; }
+  .task-row.flash { animation: row-flash 0.8s ease; }
+  @keyframes row-flash {
+    0%   { background: var(--accent-dim); }
+    100% { background: transparent; }
+  }
 
   .icon-btn {
     background: none;

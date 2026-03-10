@@ -1,28 +1,41 @@
 import { writable, derived, get } from 'svelte/store';
-import type { Task, Flag, SortField, SortDir } from '../types';
+import type { Task, Flag, Tag, SavedView, SortField, SortDir } from '../types';
 import { api } from '../api';
 
 // ── Raw data ──────────────────────────────────────────────────────────────────
 export const allTasks = writable<Task[]>([]);
-export const flags = writable<Flag[]>([]);
+export const flags    = writable<Flag[]>([]);
+export const tags     = writable<Tag[]>([]);
+export const views    = writable<SavedView[]>([]);
 
 // ── UI state ──────────────────────────────────────────────────────────────────
-export const expanded = writable<Set<string>>(new Set());
-export const selected = writable<Set<string>>(new Set());
-export const editingId = writable<string | null>(null);
-export const sortField = writable<SortField>('position');
-export const sortDir = writable<SortDir>('asc');
-export const filterFlagId = writable<string | null>(null);
-export const searchQuery = writable<string>('');
+export const expanded          = writable<Set<string>>(new Set());
+export const selected          = writable<Set<string>>(new Set());
+export const editingId         = writable<string | null>(null);
+export const detailTaskId      = writable<string | null>(null);
+export const activeTabId       = writable<string>('outline');
+export const showPrefs         = writable<boolean>(false);
+export const showRapidInput    = writable<boolean>(false);
+export const outlineScrollToId = writable<string | null>(null);
+export const lastUsedFlagId    = writable<string | null>(null);
+export const contextMenu       = writable<{ x: number; y: number; taskId: string } | null>(null);
+export const showViewsPanel    = writable<boolean>(false);
+export const searchQuery       = writable<string>('');
+export const sortField         = writable<SortField>('position');
+export const sortDir           = writable<SortDir>('asc');
+export const filterFlagId      = writable<string | null>(null);
 
-// ── Derived tree ───────────────────────────────────────────────────────────────
-export const taskMap = derived(allTasks, ($tasks) => {
+// ── Derived ───────────────────────────────────────────────────────────────────
+export const taskById = derived(allTasks, ts => new Map(ts.map(t => [t.id, t])));
+
+export const childrenOf = derived(allTasks, ts => {
   const map = new Map<string | null, Task[]>();
-  for (const t of $tasks) {
+  for (const t of ts) {
     const key = t.parent_id ?? null;
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(t);
   }
+  for (const arr of map.values()) arr.sort((a, b) => a.position - b.position);
   return map;
 });
 
@@ -42,25 +55,32 @@ function sortTasks(tasks: Task[], field: SortField, dir: SortDir): Task[] {
 }
 
 export const rootTasks = derived(
-  [taskMap, sortField, sortDir, filterFlagId, searchQuery],
-  ([$map, $sf, $sd, $flag, $q]) => {
-    let tasks = $map.get(null) ?? [];
+  [childrenOf, sortField, sortDir, filterFlagId, searchQuery],
+  ([$children, $sf, $sd, $flag, $q]) => {
+    let tasks = $children.get(null) ?? [];
     if ($flag) tasks = tasks.filter(t => t.flag_id === $flag);
-    if ($q)    tasks = tasks.filter(t => t.caption.toLowerCase().includes($q.toLowerCase()));
+    if ($q) {
+      const ql = $q.toLowerCase();
+      tasks = tasks.filter(t => t.caption.toLowerCase().includes(ql));
+    }
     return sortTasks(tasks, $sf, $sd);
   }
 );
 
 export function getChildren(parentId: string): Task[] {
-  const map = get(taskMap);
-  return sortTasks(map.get(parentId) ?? [], get(sortField), get(sortDir));
+  const map = get(childrenOf);
+  return map.get(parentId) ?? [];
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 export async function loadAll() {
-  const [tasks, fls] = await Promise.all([api.getAllFlat(), api.getFlags()]);
+  const [tasks, fls, tgs, vws] = await Promise.all([
+    api.getAllFlat(), api.getFlags(), api.getTags(), api.getViews()
+  ]);
   allTasks.set(tasks);
   flags.set(fls);
+  tags.set(tgs);
+  views.set(vws);
 }
 
 export async function createTask(input: Parameters<typeof api.createTask>[0]) {
@@ -72,6 +92,7 @@ export async function createTask(input: Parameters<typeof api.createTask>[0]) {
 export async function updateTask(id: string, input: Parameters<typeof api.updateTask>[1]) {
   const task = await api.updateTask(id, input);
   allTasks.update(ts => ts.map(t => t.id === id ? task : t));
+  // refresh detail panel if this task is shown
   return task;
 }
 
@@ -85,12 +106,14 @@ export async function deleteTask(id: string) {
   }
   collect(id);
   allTasks.update(ts => ts.filter(t => !toRemove.has(t.id)));
+  detailTaskId.update(id => toRemove.has(id ?? '') ? null : id);
 }
 
 export async function completeTask(id: string, completed: boolean) {
   const task = await api.completeTask(id, completed);
   if (completed) {
     allTasks.update(ts => ts.filter(t => t.id !== id));
+    detailTaskId.update(did => did === id ? null : did);
   } else {
     allTasks.update(ts => ts.map(t => t.id === id ? task : t));
   }
@@ -109,6 +132,7 @@ export async function reorderTasks(idsAndPositions: [string, number][]) {
   }));
 }
 
+// ── UI helpers ─────────────────────────────────────────────────────────────────
 export function toggleExpanded(id: string) {
   expanded.update(s => {
     const next = new Set(s);
@@ -135,10 +159,12 @@ export function setSelected(id: string, multi: boolean) {
     }
     return new Set([id]);
   });
+  if (!multi) detailTaskId.set(id);
 }
 
 export function clearSelection() {
   selected.set(new Set());
+  detailTaskId.set(null);
 }
 
 export function toggleSort(field: SortField) {
@@ -150,4 +176,22 @@ export function toggleSort(field: SortField) {
     sortDir.set('asc');
     return field;
   });
+}
+
+export function navigateToOutline(id: string) {
+  activeTabId.set('outline');
+  // expand ancestors
+  const all = get(allTasks);
+  const map = get(taskById);
+  let t = map.get(id);
+  while (t?.parent_id) {
+    expanded.update(s => { const n = new Set(s); n.add(t!.parent_id!); return n; });
+    t = map.get(t.parent_id);
+  }
+  outlineScrollToId.set(id);
+  setSelected(id, false);
+}
+
+export function expandToTask(id: string) {
+  navigateToOutline(id);
 }

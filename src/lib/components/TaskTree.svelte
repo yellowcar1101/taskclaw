@@ -3,18 +3,29 @@
   import {
     rootTasks, sortField, sortDir, toggleSort,
     filterFlagId, flags, searchQuery,
-    expandAll, collapseAll, clearSelection, createTask, editingId
+    expandAll, collapseAll, clearSelection, createTask, editingId,
+    showRapidInput
   } from '../stores/tasks';
 
   async function addRootTask() {
     const t = await createTask({ parent_id: null, caption: 'New task' });
     editingId.set(t.id);
   }
+
+  function onGlobalKeydown(e: KeyboardEvent) {
+    if (e.ctrlKey && e.shiftKey && e.key === 'I') {
+      e.preventDefault();
+      showRapidInput.set(true);
+    }
+  }
 </script>
+
+<svelte:window on:keydown={onGlobalKeydown} />
 
 <!-- Toolbar -->
 <div class="tree-toolbar">
   <button class="tb-btn primary" on:click={addRootTask}>+ Task</button>
+  <button class="tb-btn" on:click={() => showRapidInput.set(true)} title="Rapid Input (Ctrl+Shift+I)">📋 Rapid</button>
 
   <input
     class="search-input"
