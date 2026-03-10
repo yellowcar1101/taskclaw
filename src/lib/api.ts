@@ -45,6 +45,16 @@ export const api = {
   skipOccurrence: (id: string): Promise<Task> =>
     invoke('skip_occurrence', { id }),
 
+  // ── Web API ────────────────────────────────────────────────────────────────
+  webapiStart: (port: number): Promise<string> =>
+    invoke('webapi_start', { port }),
+
+  webapiSetToken: (token: string): Promise<void> =>
+    invoke('webapi_set_token', { token }),
+
+  webapiStatus: (): Promise<{ port: string | null; has_token: boolean }> =>
+    invoke('webapi_status'),
+
   // ── GDrive Sync ────────────────────────────────────────────────────────────
   gdriveAuthUrl: (): Promise<{ url: string; port: number }> =>
     invoke('gdrive_auth_url'),

@@ -4,7 +4,7 @@
   import { api } from '../api';
   import type { Flag, Tag } from '../types';
 
-  let activeTab: 'flags' | 'tags' | 'app' | 'sync' = 'flags';
+  let activeTab: 'flags' | 'tags' | 'app' | 'sync' | 'api' = 'flags';
   let error = '';
 
   // ── App appearance settings ──────────────────────────────────────────────────
@@ -194,6 +194,51 @@
     } catch (e: any) { error = e?.message ?? String(e); }
   }
 
+  // ── Web API ───────────────────────────────────────────────────────────────
+  let apiPort = 7380;
+  let apiStatus: { port: string | null; has_token: boolean } | null = null;
+  let apiToken = '';
+  let apiMsg = '';
+  let apiStarting = false;
+
+  async function loadApiStatus() {
+    try { apiStatus = await api.webapiStatus(); } catch {}
+  }
+
+  async function startApi() {
+    apiStarting = true;
+    apiMsg = '';
+    try {
+      const msg = await api.webapiStart(apiPort);
+      apiMsg = msg;
+      await loadApiStatus();
+    } catch (e: any) {
+      apiMsg = 'Error: ' + (e?.message ?? String(e));
+    } finally {
+      apiStarting = false;
+    }
+  }
+
+  async function saveToken() {
+    if (!apiToken.trim()) return;
+    try {
+      await api.webapiSetToken(apiToken.trim());
+      apiMsg = 'Token saved. Restart API to apply.';
+      apiToken = '';
+      await loadApiStatus();
+    } catch (e: any) {
+      apiMsg = 'Error: ' + (e?.message ?? String(e));
+    }
+  }
+
+  function genToken() {
+    const arr = new Uint8Array(24);
+    crypto.getRandomValues(arr);
+    apiToken = btoa(String.fromCharCode(...arr)).replace(/[+/=]/g, '').slice(0, 32);
+  }
+
+  onMount(loadApiStatus);
+
   function close() { showPrefs.set(false); }
   function onKeydown(e: KeyboardEvent) { if (e.key === 'Escape') close(); }
 </script>
@@ -214,6 +259,7 @@
       <button class="tab" class:active={activeTab === 'tags'}  on:click={() => activeTab = 'tags'}>Tags</button>
       <button class="tab" class:active={activeTab === 'app'}   on:click={() => activeTab = 'app'}>Appearance</button>
       <button class="tab" class:active={activeTab === 'sync'}  on:click={() => activeTab = 'sync'}>Sync</button>
+      <button class="tab" class:active={activeTab === 'api'}   on:click={() => activeTab = 'api'}>API</button>
     </div>
 
     {#if error}
@@ -373,6 +419,71 @@
         {#if syncStatus}
           <div class="sync-msg" class:err={syncStatus.startsWith('Error')}>{syncStatus}</div>
         {/if}
+      {/if}
+
+      <!-- API TAB -->
+      {#if activeTab === 'api'}
+        <div class="section-hint">
+          REST API lets external apps read your tasks over HTTP.
+          Default port: <code>7380</code> — access at <code>http://localhost:7380/api/tasks</code>.
+          The API persists across restarts once started.
+        </div>
+
+        {#if apiStatus?.port}
+          <div class="sync-status connected">
+            <span class="sync-dot connected"></span>
+            Running on port {apiStatus.port}
+            {#if apiStatus.has_token}· token protected{/if}
+          </div>
+        {:else}
+          <div class="sync-status">
+            <span class="sync-dot"></span>
+            Not running
+          </div>
+        {/if}
+
+        <div class="info-row">
+          <span class="info-label">Port</span>
+          <input
+            type="number" min="1024" max="65535"
+            class="name-input" style="max-width:90px"
+            bind:value={apiPort}
+          />
+        </div>
+
+        <div style="margin: 10px 0">
+          <button class="sync-btn push" on:click={startApi} disabled={apiStarting}>
+            {apiStarting ? '…' : apiStatus?.port ? '↺ Restart API' : '▶ Start API'}
+          </button>
+        </div>
+
+        <div class="info-row" style="margin-top:12px">
+          <span class="info-label">Auth Token</span>
+          <div style="display:flex;gap:6px;flex:1">
+            <input class="name-input" placeholder="Paste or generate…" bind:value={apiToken} style="flex:1" />
+            <button class="icon-btn" on:click={genToken} title="Generate random token">⚡</button>
+            <button class="icon-btn accent" on:click={saveToken} title="Save token">✓</button>
+          </div>
+        </div>
+        <div class="section-hint" style="margin-top:4px">
+          {#if apiStatus?.has_token}
+            A token is set. Send <code>Authorization: Bearer &lt;token&gt;</code> in requests.
+            To change, enter a new token above.
+          {:else}
+            No token set — API is open to all local network clients.
+          {/if}
+        </div>
+
+        {#if apiMsg}
+          <div class="sync-msg" class:err={apiMsg.startsWith('Error')}>{apiMsg}</div>
+        {/if}
+
+        <div class="section-hint" style="margin-top:16px">
+          <strong>Endpoints:</strong><br>
+          GET /api/tasks · GET /api/tasks/:id<br>
+          GET /api/flags · GET /api/tags · GET /api/views<br>
+          GET /api/health
+        </div>
       {/if}
 
     </div>
