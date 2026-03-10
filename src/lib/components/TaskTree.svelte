@@ -2,7 +2,7 @@
   import TaskRow from './TaskRow.svelte';
   import {
     rootTasks, searchQuery,
-    expandAll, collapseAll, clearSelection, createTask, editingId
+    expandAll, collapseAll, clearSelection, createTask, editingId, showRapidInput
   } from '../stores/tasks';
 
   async function addRootTask() {
@@ -14,6 +14,7 @@
 <!-- Toolbar -->
 <div class="tree-toolbar">
   <button class="tb-btn primary" on:click={addRootTask}>+ Task</button>
+  <button class="tb-btn rapid" on:click={() => showRapidInput.set(true)} title="Rapid Input (paste multiple tasks)">📋 Rapid</button>
 
   <input
     class="search-input"
@@ -76,6 +77,7 @@
     border-color: var(--accent);
   }
   .tb-btn.primary:hover { filter: brightness(1.15); }
+  .tb-btn.rapid { color: var(--text-dim); }
 
   .search-input {
     background: var(--input-bg);

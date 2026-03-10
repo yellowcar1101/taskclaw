@@ -8,8 +8,9 @@
   import SyncBar from '$lib/components/SyncBar.svelte';
   import Prefs from '$lib/components/Prefs.svelte';
   import ReminderWindow from '$lib/components/ReminderWindow.svelte';
+  import RapidInput from '$lib/components/RapidInput.svelte';
   import {
-    loadAll, views, activeTabId, detailTaskId, showPrefs
+    loadAll, views, activeTabId, detailTaskId, showPrefs, showRapidInput
   } from '$lib/stores/tasks';
   import type { SavedView } from '$lib/types';
 
@@ -81,6 +82,14 @@
 <!-- Overlays -->
 <Prefs bind:open={$showPrefs} />
 <ReminderWindow bind:this={reminderWindow} />
+<RapidInput />
+
+<svelte:window on:keydown={e => {
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'I') {
+    e.preventDefault();
+    showRapidInput.set(true);
+  }
+}} />
 
 <style>
   .app-shell {

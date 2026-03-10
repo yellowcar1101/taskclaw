@@ -2,12 +2,14 @@
   import { createEventDispatcher } from 'svelte';
   import type { Task } from '../types';
   import { tick } from 'svelte';
+  import { get } from 'svelte/store';
   import {
     expanded, selected, editingId, detailTaskId,
     toggleExpanded, setSelected, updateTask, deleteTask,
     completeTask, moveTask, getChildren, reorderTasks, createTask, openDetail,
-    outlineScrollToId
+    outlineScrollToId, flags, tags
   } from '../stores/tasks';
+  import { parseTaskLine } from '../parsing';
 
   export let task: Task;
   export let depth: number = 0;
@@ -48,7 +50,23 @@
     editingId.set(null);
   }
 
-  function onKeydown(e: KeyboardEvent) {
+  async function onKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter' && e.altKey) {
+      e.preventDefault();
+      // Apply parsing to current edit value
+      const parsed = parseTaskLine(editValue, get(flags), get(tags));
+      const updates: Record<string, unknown> = {};
+      if (parsed.caption)        updates.caption    = parsed.caption;
+      if (parsed.flagId)         updates.flag_id    = parsed.flagId;
+      if (parsed.startDate)      updates.start_date = parsed.startDate;
+      if (parsed.dueDate)        updates.due_date   = parsed.dueDate;
+      if (parsed.reminderAt)     updates.reminder_at = parsed.reminderAt;
+      if (parsed.starred)        updates.starred    = true;
+      if (parsed.tagIds.length)  updates.tag_ids    = parsed.tagIds;
+      await updateTask(task.id, updates);
+      editingId.set(null);
+      return;
+    }
     if (e.key === 'Enter') { e.preventDefault(); commitEdit(); }
     if (e.key === 'Escape') { editingId.set(null); }
   }

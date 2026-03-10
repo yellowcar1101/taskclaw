@@ -17,7 +17,8 @@ export const activeTabId = writable<string>('outline'); // 'outline' | view.id
 export const rightPanelOpen = writable<boolean>(true);
 export const searchQuery = writable<string>('');
 export const collapsedGroups = writable<Set<string>>(new Set());
-export const showPrefs        = writable<boolean>(false);
+export const showPrefs         = writable<boolean>(false);
+export const showRapidInput    = writable<boolean>(false);
 export const outlineScrollToId = writable<string | null>(null);
 
 // ── Derived ───────────────────────────────────────────────────────────────────
