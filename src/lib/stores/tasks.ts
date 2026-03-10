@@ -17,7 +17,8 @@ export const activeTabId = writable<string>('outline'); // 'outline' | view.id
 export const rightPanelOpen = writable<boolean>(true);
 export const searchQuery = writable<string>('');
 export const collapsedGroups = writable<Set<string>>(new Set());
-export const showPrefs   = writable<boolean>(false);
+export const showPrefs        = writable<boolean>(false);
+export const outlineScrollToId = writable<string | null>(null);
 
 // ── Derived ───────────────────────────────────────────────────────────────────
 export const taskMap = derived(allTasks, ($tasks) => {
@@ -48,11 +49,15 @@ export const rootTasks = derived([taskMap, searchQuery], ([$map, $q]) => {
 });
 
 // ── View grouping ─────────────────────────────────────────────────────────────
+function parseDate(d: string): Date {
+  return new Date(d.includes('T') ? d : d + 'T00:00:00');
+}
+
 function dueBucket(task: Task): { key: string; label: string; order: number } {
   const due = task.due_date;
   if (!due) return { key: 'no_date', label: 'No Date', order: 99 };
   const today = new Date(); today.setHours(0,0,0,0);
-  const d = new Date(due + 'T00:00:00');
+  const d = parseDate(due);
   const diff = Math.floor((d.getTime() - today.getTime()) / 86400000);
   if (diff < 0)  return { key: 'overdue',   label: 'Overdue',    order: 0 };
   if (diff === 0) return { key: 'today',    label: 'Today',      order: 1 };
@@ -65,7 +70,7 @@ function startBucket(task: Task): { key: string; label: string; order: number } 
   const start = task.start_date;
   if (!start) return { key: 'no_start', label: 'No Start Date', order: 99 };
   const today = new Date(); today.setHours(0,0,0,0);
-  const d = new Date(start + 'T00:00:00');
+  const d = parseDate(start);
   const diff = Math.floor((d.getTime() - today.getTime()) / 86400000);
   if (diff <= 0) return { key: 'active',  label: 'Active',   order: 0 };
   if (diff <= 7) return { key: 'soon',    label: 'Starting Soon', order: 1 };
@@ -218,3 +223,23 @@ export function clearSelection() { selected.set(new Set()); }
 
 export function openDetail(id: string) { detailTaskId.set(id); }
 export function closeDetail() { detailTaskId.set(null); }
+
+export function expandToTask(taskId: string) {
+  const byId = get(taskById);
+  const toExpand = new Set<string>();
+  let current = byId.get(taskId);
+  while (current?.parent_id) {
+    toExpand.add(current.parent_id);
+    current = byId.get(current.parent_id);
+  }
+  if (toExpand.size > 0) {
+    expanded.update(s => { const n = new Set(s); toExpand.forEach(id => n.add(id)); return n; });
+  }
+}
+
+export function navigateToOutline(taskId: string) {
+  setSelected(taskId, false);
+  expandToTask(taskId);
+  activeTabId.set('outline');
+  outlineScrollToId.set(taskId);
+}

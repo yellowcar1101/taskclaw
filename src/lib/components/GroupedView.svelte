@@ -1,25 +1,26 @@
 <script lang="ts">
-  import type { Task, SavedView, TaskGroup } from '../types';
+  import type { Task, SavedView } from '../types';
   import {
     allTasks, flags, sortTasks, groupTasks,
     toggleGroup, collapsedGroups, selected, setSelected,
-    editingId, updateTask, deleteTask, completeTask, openDetail, createTask
+    updateTask, deleteTask, completeTask, openDetail, createTask,
+    navigateToOutline
   } from '../stores/tasks';
   import { api } from '../api';
 
   export let view: SavedView;
 
-  let editingTaskId: string | null = null;
-  let editValue = '';
-  let inputEl: HTMLInputElement;
-
   $: activeTasks = $allTasks.filter(t => view.show_completed ? true : !t.completed_at);
   $: sorted = sortTasks(activeTasks, view.sort_by as any, view.sort_dir as any);
   $: groups = groupTasks(sorted, view.group_by as any, $flags);
 
+  function parseDate(d: string): Date {
+    return new Date(d.includes('T') ? d : d + 'T00:00:00');
+  }
+
   function formatDate(d: string | null): string {
     if (!d) return '';
-    const dt = new Date(d + 'T00:00:00');
+    const dt = parseDate(d);
     const today = new Date(); today.setHours(0,0,0,0);
     const diff = Math.floor((dt.getTime() - today.getTime()) / 86400000);
     if (diff < 0)  return `${Math.abs(diff)}d ago`;
@@ -31,25 +32,8 @@
 
   function dateClass(d: string | null): string {
     if (!d) return '';
-    const diff = Math.floor((new Date(d + 'T00:00:00').getTime() - Date.now()) / 86400000);
+    const diff = Math.floor((parseDate(d).getTime() - Date.now()) / 86400000);
     if (diff < 0) return 'overdue'; if (diff === 0) return 'today'; if (diff <= 3) return 'soon'; return '';
-  }
-
-  function startInlineEdit(task: Task) {
-    editingTaskId = task.id;
-    editValue = task.caption;
-    setTimeout(() => inputEl?.focus(), 10);
-  }
-
-  async function commitEdit(task: Task) {
-    if (editValue.trim() && editValue !== task.caption)
-      await updateTask(task.id, { caption: editValue.trim() });
-    editingTaskId = null;
-  }
-
-  function onKeydown(e: KeyboardEvent, task: Task) {
-    if (e.key === 'Enter') { e.preventDefault(); commitEdit(task); }
-    if (e.key === 'Escape') editingTaskId = null;
   }
 </script>
 
@@ -76,7 +60,7 @@
           class:selected={$selected.has(task.id)}
           class:completed={!!task.completed_at}
           on:click={e => setSelected(task.id, e.ctrlKey || e.metaKey)}
-          on:dblclick={() => startInlineEdit(task)}
+          on:dblclick={() => navigateToOutline(task.id)}
           role="row"
           tabindex="0"
         >
@@ -93,12 +77,7 @@
 
           <!-- Caption -->
           <div class="caption-cell">
-            {#if editingTaskId === task.id}
-              <input bind:this={inputEl} bind:value={editValue} class="caption-input"
-                on:blur={() => commitEdit(task)} on:keydown={e => onKeydown(e, task)} />
-            {:else}
-              <span class="caption-text" class:completed-text={!!task.completed_at}>{task.caption}</span>
-            {/if}
+            <span class="caption-text" class:completed-text={!!task.completed_at}>{task.caption}</span>
             {#each task.tags as tag}
               <span class="tag-chip" style="background:{tag.color}22;color:{tag.color};border-color:{tag.color}55">{tag.name}</span>
             {/each}
@@ -113,6 +92,7 @@
           <!-- Actions on hover -->
           <div class="row-actions">
             <button class="icon-btn" on:click|stopPropagation={() => openDetail(task.id)} title="Detail">⋯</button>
+            <button class="icon-btn" on:click|stopPropagation={() => navigateToOutline(task.id)} title="Go to Outline">⊙</button>
             <button class="icon-btn danger" on:click|stopPropagation={async () => {
               if (confirm(`Delete "${task.caption}"?`)) await deleteTask(task.id);
             }} title="Delete">✕</button>
@@ -176,12 +156,6 @@
     font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0;
   }
   .caption-text.completed-text { text-decoration: line-through; color: var(--text-dim); }
-
-  .caption-input {
-    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
-    font-size: 13px; background: var(--input-bg); border: 1px solid var(--accent);
-    color: var(--text); padding: 1px 4px; border-radius: 3px; flex: 1; min-width: 0; outline: none;
-  }
 
   .tag-chip { font-size: 10px; padding: 1px 5px; border-radius: 10px; border: 1px solid; white-space: nowrap; flex-shrink: 0; font-family: sans-serif; }
   .note-dot { font-size: 11px; color: var(--text-dim); flex-shrink: 0; }

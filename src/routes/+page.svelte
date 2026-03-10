@@ -7,18 +7,24 @@
   import TaskDetail from '$lib/components/TaskDetail.svelte';
   import SyncBar from '$lib/components/SyncBar.svelte';
   import Prefs from '$lib/components/Prefs.svelte';
+  import ReminderWindow from '$lib/components/ReminderWindow.svelte';
   import {
     loadAll, views, activeTabId, detailTaskId, showPrefs
   } from '$lib/stores/tasks';
   import type { SavedView } from '$lib/types';
 
   let ready = false;
+  let reminderWindow: ReminderWindow;
 
   $: activeView = $views.find((v: SavedView) => v.id === $activeTabId) ?? null;
 
   onMount(async () => {
     await loadAll();
     ready = true;
+    // Check reminders immediately and every 30s
+    if (reminderWindow) reminderWindow.refresh();
+    const interval = setInterval(() => { if (reminderWindow) reminderWindow.refresh(); }, 30000);
+    return () => clearInterval(interval);
   });
 </script>
 
@@ -52,7 +58,6 @@
 
   <!-- Main area -->
   <div class="main-area">
-    <!-- Content -->
     <div class="content">
       {#if !ready}
         <div class="loading">Loading…</div>
@@ -65,18 +70,17 @@
       {/if}
     </div>
 
-    <!-- Task detail panel (when a task is open) -->
     {#if $detailTaskId}
       <TaskDetail />
     {/if}
 
-    <!-- Views panel (right side) -->
     <ViewsPanel />
   </div>
 </div>
 
-<!-- Preferences modal -->
+<!-- Overlays -->
 <Prefs bind:open={$showPrefs} />
+<ReminderWindow bind:this={reminderWindow} />
 
 <style>
   .app-shell {

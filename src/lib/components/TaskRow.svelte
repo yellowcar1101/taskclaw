@@ -1,10 +1,12 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import type { Task } from '../types';
+  import { tick } from 'svelte';
   import {
     expanded, selected, editingId, detailTaskId,
     toggleExpanded, setSelected, updateTask, deleteTask,
-    completeTask, moveTask, getChildren, reorderTasks, createTask, openDetail
+    completeTask, moveTask, getChildren, reorderTasks, createTask, openDetail,
+    outlineScrollToId
   } from '../stores/tasks';
 
   export let task: Task;
@@ -24,6 +26,15 @@
   $: children    = isExpanded ? getChildren(task.id) : [];
   $: myIndex     = siblings.findIndex(s => s.id === task.id);
   $: isCompleted = !!task.completed_at;
+  $: isScrollTarget = $outlineScrollToId === task.id;
+
+  let rowEl: HTMLDivElement;
+  $: if (isScrollTarget && rowEl) {
+    tick().then(() => {
+      rowEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      outlineScrollToId.set(null);
+    });
+  }
 
   function startEdit() {
     editValue = task.caption;
@@ -81,9 +92,13 @@
     editingId.set(t.id);
   }
 
+  function parseDate(d: string): Date {
+    return new Date(d.includes('T') ? d : d + 'T00:00:00');
+  }
+
   function formatDate(d: string | null): string {
     if (!d) return '';
-    const dt = new Date(d + 'T00:00:00');
+    const dt = parseDate(d);
     const today = new Date(); today.setHours(0,0,0,0);
     const diff = Math.floor((dt.getTime() - today.getTime()) / 86400000);
     if (diff < 0)  return `${Math.abs(diff)}d ago`;
@@ -95,8 +110,7 @@
 
   function dateClass(d: string | null): string {
     if (!d) return '';
-    const dt = new Date(d + 'T00:00:00');
-    const diff = Math.floor((dt.getTime() - Date.now()) / 86400000);
+    const diff = Math.floor((parseDate(d).getTime() - Date.now()) / 86400000);
     if (diff < 0)  return 'overdue';
     if (diff === 0) return 'today';
     if (diff <= 3)  return 'soon';
@@ -127,11 +141,14 @@
   on:dragover={onDragOver} on:dragleave={onDragLeave} on:drop={onDrop} role="none"></div>
 
 <div
+  bind:this={rowEl}
+  data-task-id={task.id}
   class="task-row"
   class:selected={isSelected}
   class:detail-open={isDetail}
   class:dragging
   class:completed={isCompleted}
+  class:scroll-flash={isScrollTarget}
   style="padding-left: {depth * 20 + 4}px"
   on:click={onClick}
   on:dblclick={startEdit}
@@ -249,6 +266,11 @@
   .task-row.detail-open { border-color: var(--accent-dim); }
   .task-row.dragging { opacity: 0.4; }
   .task-row.completed { opacity: 0.45; }
+  @keyframes flash-highlight {
+    0%   { background: var(--accent-dim); }
+    100% { background: transparent; }
+  }
+  .task-row.scroll-flash { animation: flash-highlight 1.2s ease-out; }
 
   .icon-btn {
     background: none; border: none; color: var(--text-dim); cursor: pointer;

@@ -6,8 +6,18 @@
 
   let caption = '';
   let note = '';
+  // Date fields
   let startDate = '';
+  let startTime = '';
+  let useStartTime = false;
   let dueDate = '';
+  let dueTime = '';
+  let useDueTime = false;
+  // Reminder
+  let reminderDate = '';
+  let reminderTime = '';
+  let useReminderTime = false;
+  // Other
   let flagId = '';
   let starred = false;
   let selectedTagIds: string[] = [];
@@ -15,16 +25,48 @@
   let outlookLink = '';
   let saving = false;
 
+  function parseDateStr(s: string | null): { date: string; time: string; hasTime: boolean } {
+    if (!s) return { date: '', time: '', hasTime: false };
+    const hasTime = s.includes('T');
+    const [date, t = ''] = s.split('T');
+    return { date, time: t.slice(0, 5), hasTime };
+  }
+
+  function buildDateStr(date: string, time: string, useTime: boolean): string {
+    if (!date) return '';
+    return useTime && time ? `${date}T${time}` : date;
+  }
+
   $: if (task) {
     caption = task.caption;
     note = task.note;
-    startDate = task.start_date ?? '';
-    dueDate = task.due_date ?? '';
+    const sd = parseDateStr(task.start_date);
+    startDate = sd.date; startTime = sd.time; useStartTime = sd.hasTime;
+    const dd = parseDateStr(task.due_date);
+    dueDate = dd.date; dueTime = dd.time; useDueTime = dd.hasTime;
+    const rd = parseDateStr(task.reminder_at);
+    reminderDate = rd.date; reminderTime = rd.time; useReminderTime = rd.hasTime;
     flagId = task.flag_id ?? '';
     starred = task.starred;
     selectedTagIds = task.tags.map(t => t.id);
     gmailLink = '';
     outlookLink = '';
+  }
+
+  function onStartDateChange() {
+    // Auto-fill due date if empty
+    if (startDate && !dueDate) {
+      dueDate = startDate;
+      dueTime = startTime;
+      useDueTime = useStartTime;
+    }
+    // Auto-fill reminder if empty
+    if (startDate && !reminderDate) {
+      reminderDate = startDate;
+      reminderTime = startTime;
+      useReminderTime = useStartTime;
+    }
+    save();
   }
 
   async function save() {
@@ -33,8 +75,9 @@
     await updateTask(task.id, {
       caption: caption.trim() || task.caption,
       note,
-      start_date: startDate || '',
-      due_date: dueDate || '',
+      start_date: buildDateStr(startDate, startTime, useStartTime),
+      due_date:   buildDateStr(dueDate, dueTime, useDueTime),
+      reminder_at: buildDateStr(reminderDate, reminderTime, useReminderTime),
       flag_id: flagId || '',
       starred,
       tag_ids: selectedTagIds,
@@ -47,9 +90,7 @@
     const threadId = gmailLink.trim().replace(/.*\/([^/]+)$/, '$1');
     await api.addEmailLink(task.id, 'gmail', threadId, 'Gmail thread');
     gmailLink = '';
-    // reload task
     const updated = await api.updateTask(task.id, {});
-    // trigger refresh via store
   }
 
   async function addOutlookLink() {
@@ -95,21 +136,73 @@
         <select bind:value={flagId} on:change={save}>
           <option value="">— none —</option>
           {#each $flags as f}
-            <option value={f.id}>
-              {f.name}
-            </option>
+            <option value={f.id}>{f.name}</option>
           {/each}
         </select>
       </div>
 
-      <!-- Dates -->
-      <div class="field-row">
-        <label>Start</label>
-        <input type="date" bind:value={startDate} on:change={save} />
+      <!-- Start date -->
+      <div class="field-col">
+        <div class="field-row">
+          <label>Start</label>
+          <input type="date" bind:value={startDate} on:change={onStartDateChange} />
+        </div>
+        {#if startDate}
+          <div class="field-row sub-row">
+            <label></label>
+            <label class="time-check">
+              <input type="checkbox" bind:checked={useStartTime} on:change={save} />
+              <span>Use time</span>
+            </label>
+            {#if useStartTime}
+              <input type="time" bind:value={startTime} on:change={save} class="time-input" />
+            {/if}
+          </div>
+        {/if}
       </div>
-      <div class="field-row">
-        <label>Due</label>
-        <input type="date" bind:value={dueDate} on:change={save} />
+
+      <!-- Due date -->
+      <div class="field-col">
+        <div class="field-row">
+          <label>Due</label>
+          <input type="date" bind:value={dueDate} on:change={save} />
+        </div>
+        {#if dueDate}
+          <div class="field-row sub-row">
+            <label></label>
+            <label class="time-check">
+              <input type="checkbox" bind:checked={useDueTime} on:change={save} />
+              <span>Use time</span>
+            </label>
+            {#if useDueTime}
+              <input type="time" bind:value={dueTime} on:change={save} class="time-input" />
+            {/if}
+          </div>
+        {/if}
+      </div>
+
+      <!-- Reminder -->
+      <div class="section-label" style="margin-top:2px">Reminder</div>
+      <div class="field-col">
+        <div class="field-row">
+          <label>Date</label>
+          <input type="date" bind:value={reminderDate} on:change={save} />
+          {#if reminderDate}
+            <button class="clear-btn" on:click={() => { reminderDate = ''; reminderTime = ''; useReminderTime = false; save(); }} title="Clear">✕</button>
+          {/if}
+        </div>
+        {#if reminderDate}
+          <div class="field-row sub-row">
+            <label></label>
+            <label class="time-check">
+              <input type="checkbox" bind:checked={useReminderTime} on:change={save} />
+              <span>Use time</span>
+            </label>
+            {#if useReminderTime}
+              <input type="time" bind:value={reminderTime} on:change={save} class="time-input" />
+            {/if}
+          </div>
+        {/if}
       </div>
 
       <!-- Tags -->
@@ -146,7 +239,7 @@
           bind:value={note}
           on:blur={save}
           placeholder="Notes (Markdown supported)…"
-          rows="8"
+          rows="6"
         ></textarea>
       </div>
 
@@ -199,17 +292,33 @@
   .detail-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); font-family: sans-serif; }
   .detail-actions { display: flex; gap: 4px; }
 
-  .detail-body { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .detail-body { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
 
   .caption-field {
-    background: transparent; border: none; border-bottom: 1px solid var(--border);
+    background: var(--input-bg); border: 1px solid var(--border);
+    border-radius: 4px;
     color: var(--text); font-family: 'Cascadia Code', 'Fira Code', monospace;
-    font-size: 13px; padding: 2px 0; outline: none; width: 100%;
+    font-size: 13px; padding: 4px 6px; outline: none; width: 100%;
   }
-  .caption-field:focus { border-bottom-color: var(--accent); }
+  .caption-field:focus { border-color: var(--accent); }
 
-  .field-row { display: flex; align-items: center; gap: 8px; }
+  .field-col { display: flex; flex-direction: column; gap: 2px; }
+  .field-row { display: flex; align-items: center; gap: 6px; }
+  .sub-row { padding-left: 0; }
   .field-row label { font-size: 11px; color: var(--text-dim); width: 44px; flex-shrink: 0; font-family: sans-serif; }
+
+  .time-check { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-dim); cursor: pointer; font-family: sans-serif; width: auto; }
+  .time-check input { width: auto; margin: 0; }
+  .time-check span { white-space: nowrap; }
+
+  .time-input {
+    flex: 1; background: var(--input-bg); border: 1px solid var(--border);
+    color: var(--text); padding: 2px 5px; border-radius: 3px; font-size: 11px; outline: none;
+  }
+  .time-input:focus { border-color: var(--accent); }
+
+  .clear-btn { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 10px; padding: 1px 3px; border-radius: 3px; flex-shrink: 0; }
+  .clear-btn:hover { color: var(--red); }
 
   select, input[type="date"] {
     background: var(--input-bg); border: 1px solid var(--border);
@@ -250,7 +359,7 @@
   }
   textarea:focus { border-color: var(--accent); }
 
-  .section-label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; font-family: sans-serif; margin-top: 4px; }
+  .section-label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; font-family: sans-serif; }
 
   .email-link-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
   .link-icon { font-size: 12px; flex-shrink: 0; }
@@ -265,7 +374,7 @@
   .add-link-btn { background: var(--hover-btn); border: 1px solid var(--border); color: var(--text-dim); padding: 3px 8px; border-radius: 3px; cursor: pointer; font-size: 11px; white-space: nowrap; }
   .add-link-btn:hover { color: var(--text); }
 
-  .meta-row { display: flex; gap: 12px; font-size: 10px; color: var(--text-dim); font-family: sans-serif; margin-top: 4px; }
+  .meta-row { display: flex; gap: 12px; font-size: 10px; color: var(--text-dim); font-family: sans-serif; }
 
   .icon-btn { background: none; border: none; cursor: pointer; padding: 2px 5px; border-radius: 3px; font-size: 13px; color: var(--text-dim); transition: color 0.1s; }
   .icon-btn.star { color: var(--text-dim); }
