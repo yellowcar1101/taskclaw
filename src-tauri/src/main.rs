@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    taskclaw_lib::run()
+    taskclaw_scaffold_lib::run()
 }

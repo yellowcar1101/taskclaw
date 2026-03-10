@@ -1,4 +1,4 @@
-export interface Flag {
+export interface Context {
   id: string;
   name: string;
   color: string;
@@ -28,37 +28,48 @@ export interface Task {
   created_at: string;
   updated_at: string;
   completed_at: string | null;
-  start_date: string | null;
+  importance: number;
+  urgency: number;
+  effort: number;
   due_date: string | null;
   reminder_at: string | null;
   recurrence_rule: string | null;
-  flag_id: string | null;
-  flag: Flag | null;
   starred: boolean;
   color: string | null;
+  contexts: Context[];
   tags: Tag[];
   email_links: EmailLink[];
   has_children: boolean;
+  score: number;
 }
 
-export interface SavedView {
-  id: string;
-  name: string;
-  show_completed: boolean;
-  group_by: GroupByField;
-  sort_by: SortByField;
-  sort_dir: 'asc' | 'desc';
-  visible_fields: string[];
-  position: number;
+export interface CreateTaskInput {
+  parent_id?: string | null;
+  caption: string;
+  note?: string;
+  position?: number;
+  importance?: number;
+  urgency?: number;
+  effort?: number;
+  due_date?: string;
+  starred?: boolean;
+  context_ids?: string[];
 }
 
-export type GroupByField = 'none' | 'flag' | 'tag' | 'due_date' | 'start_date' | 'created_at' | 'updated_at';
-export type SortByField = 'position' | 'caption' | 'start_date' | 'due_date' | 'created_at' | 'updated_at' | 'flag';
-
-export interface TaskGroup {
-  key: string;
-  label: string;
+export interface UpdateTaskInput {
+  caption?: string;
+  note?: string;
+  importance?: number;
+  urgency?: number;
+  effort?: number;
+  due_date?: string;
+  reminder_at?: string;
+  recurrence_rule?: string;
+  starred?: boolean;
   color?: string;
-  tasks: Task[];
-  collapsed: boolean;
+  context_ids?: string[];
+  tag_ids?: string[];
 }
+
+export type SortField = 'position' | 'caption' | 'due_date' | 'score' | 'importance' | 'urgency';
+export type SortDir = 'asc' | 'desc';

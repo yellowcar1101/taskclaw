@@ -29,53 +29,25 @@ jobs:
       - name: Install deps
         run: npm ci
 
-      - name: Build
-        run: npm run tauri build -- --bundles nsis
+      - name: Build (portable)
+        run: npm run tauri build -- --bundles nsis,zip
         env:
           TAURI_SIGNING_PRIVATE_KEY: ''
-          GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
-          GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
 
-      - name: Prepare flat artifacts
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Path dist | Out-Null
-
-          # Portable: the bare exe (WebView2 is system-provided on Win10 21H2+)
-          Copy-Item "src-tauri/target/release/TaskClaw.exe" "dist/TaskClaw.exe"
-
-          # NSIS installer with a clean flat name
-          $installer = Get-ChildItem "src-tauri/target/release/bundle/nsis/*.exe" |
-                       Sort-Object LastWriteTime -Descending |
-                       Select-Object -First 1
-          if ($installer) {
-            Copy-Item $installer.FullName "dist/TaskClaw-installer.exe"
-            Write-Host "Installer: $($installer.Name) -> dist/TaskClaw-installer.exe"
-          }
-
-          Write-Host "--- dist/ contents ---"
-          Get-ChildItem dist/ | Select-Object Name, Length
-
-      # Two separate artifacts so each download is a single file in a zip
-      - name: Upload portable exe
+      - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TaskClaw-portable
-          path: dist/TaskClaw.exe
+          name: taskclaw-windows
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/zip/*.zip
           retention-days: 30
 
-      - name: Upload NSIS installer
-        uses: actions/upload-artifact@v4
-        with:
-          name: TaskClaw-installer
-          path: dist/TaskClaw-installer.exe
-          retention-days: 30
-
-      - name: Release (on tag push only)
+      - name: Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/TaskClaw.exe
-            dist/TaskClaw-installer.exe
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/zip/*.zip
           generate_release_notes: true

@@ -1,9 +1,5 @@
 <script lang="ts">
-  import { contexts, filterContextId } from '../stores/tasks';
-
-  function focusOnMount(node: HTMLElement) {
-    node.focus();
-  }
+  import { contexts, filterContextId, createTask, editingId } from '../stores/tasks';
   import { api } from '../api';
 
   let newCtxName = '';
@@ -54,7 +50,7 @@
         class="ctx-name-input"
         bind:value={newCtxName}
         placeholder="@context"
-        use:focusOnMount
+        autofocus
         on:keydown={e => { if (e.key === 'Escape') addingCtx = false; }}
       />
       <button type="submit" class="mini-btn">✓</button>
