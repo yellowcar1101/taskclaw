@@ -9,36 +9,23 @@
   import Prefs from '$lib/components/Prefs.svelte';
   import ReminderWindow from '$lib/components/ReminderWindow.svelte';
   import RapidInput from '$lib/components/RapidInput.svelte';
-  import LockScreen from '$lib/components/LockScreen.svelte';
-  import { api } from '$lib/api';
   import {
     loadAll, views, activeTabId, detailTaskId, showPrefs, showRapidInput
   } from '$lib/stores/tasks';
   import type { SavedView } from '$lib/types';
 
   let ready = false;
-  let locked = false;
   let reminderWindow: ReminderWindow;
 
   $: activeView = $views.find((v: SavedView) => v.id === $activeTabId) ?? null;
 
   onMount(async () => {
-    locked = await api.isDbLocked();
-    if (!locked) {
-      await loadAll();
-      ready = true;
-      if (reminderWindow) reminderWindow.refresh();
-    }
-    const interval = setInterval(() => { if (reminderWindow && !locked) reminderWindow.refresh(); }, 30000);
-    return () => clearInterval(interval);
-  });
-
-  async function onUnlocked() {
-    locked = false;
     await loadAll();
     ready = true;
     if (reminderWindow) reminderWindow.refresh();
-  }
+    const interval = setInterval(() => { if (reminderWindow) reminderWindow.refresh(); }, 30000);
+    return () => clearInterval(interval);
+  });
 </script>
 
 <div class="app-shell">
@@ -95,9 +82,6 @@
 <Prefs bind:open={$showPrefs} />
 <ReminderWindow bind:this={reminderWindow} />
 <RapidInput />
-{#if locked}
-  <LockScreen on:unlocked={onUnlocked} />
-{/if}
 
 <svelte:window on:keydown={e => {
   if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'I') {

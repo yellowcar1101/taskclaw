@@ -2,13 +2,11 @@ use rusqlite::{Connection, Result, params};
 use std::path::PathBuf;
 
 pub fn db_path() -> PathBuf {
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
-        .unwrap_or_else(|| PathBuf::from("."));
-    let data_dir = exe_dir.join("Data");
-    std::fs::create_dir_all(&data_dir).ok();
-    data_dir.join("tasks.db")
+    let mut p = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+    p.push("taskclaw");
+    std::fs::create_dir_all(&p).ok();
+    p.push("tasks.db");
+    p
 }
 
 pub fn open() -> Result<Connection> {
@@ -16,15 +14,6 @@ pub fn open() -> Result<Connection> {
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
     migrate(&conn)?;
     Ok(conn)
-}
-
-// Stubs — will be replaced with real SQLCipher once base app is confirmed working
-pub fn open_with_key(_key: &str) -> Result<Connection> {
-    open()
-}
-
-pub fn is_db_encrypted() -> bool {
-    false
 }
 
 pub fn migrate(conn: &Connection) -> Result<()> {
@@ -101,6 +90,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_tasks_flag ON tasks(flag_id);
     ")?;
 
+    // Add columns to existing installs (idempotent — fails silently if already exists)
     for sql in [
         "ALTER TABLE tasks ADD COLUMN start_date TEXT",
         "ALTER TABLE tasks ADD COLUMN flag_id TEXT REFERENCES flags(id) ON DELETE SET NULL",
@@ -112,9 +102,10 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         "ALTER TABLE saved_views ADD COLUMN sort_dir TEXT NOT NULL DEFAULT 'asc'",
         "ALTER TABLE saved_views ADD COLUMN visible_fields TEXT NOT NULL DEFAULT '[]'",
     ] {
-        conn.execute(sql, []).ok();
+        conn.execute(sql, []).ok(); // ignore "duplicate column" errors
     }
 
+    // Seed default flags if empty
     let flag_count: i64 = conn.query_row("SELECT COUNT(*) FROM flags", [], |r| r.get(0)).unwrap_or(0);
     if flag_count == 0 {
         let defaults = [
