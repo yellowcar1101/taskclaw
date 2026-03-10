@@ -36,13 +36,23 @@ jobs:
           GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
           GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
 
+      - name: List release files (debug)
+        shell: pwsh
+        run: Get-ChildItem -Path src-tauri/target/release/ -File | Select-Object Name, Length
+
       - name: Package portable ZIP
         shell: pwsh
         run: |
-          $exe = "src-tauri/target/release/TaskClaw.exe"
+          $src = "src-tauri/target/release"
           $dest = "taskclaw-portable"
           New-Item -ItemType Directory -Path $dest | Out-Null
-          Copy-Item $exe $dest/
+          # Copy exe + all DLLs needed at runtime
+          Copy-Item "$src/TaskClaw.exe" $dest/
+          Get-ChildItem "$src/*.dll" | Copy-Item -Destination $dest/
+          # Copy resources folder if present
+          if (Test-Path "$src/resources") {
+            Copy-Item "$src/resources" $dest/ -Recurse
+          }
           Compress-Archive -Path $dest -DestinationPath "taskclaw-portable-windows.zip"
 
       - name: Upload artifacts
