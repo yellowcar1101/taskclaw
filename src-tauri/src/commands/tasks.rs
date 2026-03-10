@@ -6,7 +6,7 @@ use chrono::Utc;
 
 use crate::types::*;
 
-pub struct DbState(pub Mutex<Connection>);
+pub struct DbState(pub Mutex<Option<Connection>>);
 
 fn load_flag(conn: &Connection, flag_id: &Option<String>) -> Option<Flag> {
     let id = flag_id.as_ref()?;
@@ -91,28 +91,31 @@ fn get_task_by_id(conn: &Connection, id: &str) -> Option<Task> {
 
 #[tauri::command]
 pub fn get_tasks(state: State<DbState>, parent_id: Option<String>) -> Vec<Task> {
-    let conn = state.0.lock().unwrap();
+    let guard = state.0.lock().unwrap();
+    let conn = match guard.as_ref() { Some(c) => c, None => return vec![] };
     let sql = format!("{} WHERE parent_id IS ?1 AND completed_at IS NULL ORDER BY position", TASK_SELECT);
     conn.prepare(&sql).and_then(|mut s| {
-        s.query_map(params![parent_id], |r| map_task_row!(&conn, r))
+        s.query_map(params![parent_id], |r| map_task_row!(conn, r))
          .map(|rows| rows.filter_map(|r| r.ok()).collect())
     }).unwrap_or_default()
 }
 
 #[tauri::command]
 pub fn get_all_tasks_flat(state: State<DbState>, include_completed: Option<bool>) -> Vec<Task> {
-    let conn = state.0.lock().unwrap();
+    let guard = state.0.lock().unwrap();
+    let conn = match guard.as_ref() { Some(c) => c, None => return vec![] };
     let completed_clause = if include_completed.unwrap_or(false) { "" } else { "WHERE completed_at IS NULL" };
     let sql = format!("{} {} ORDER BY position", TASK_SELECT, completed_clause);
     conn.prepare(&sql).and_then(|mut s| {
-        s.query_map([], |r| map_task_row!(&conn, r))
+        s.query_map([], |r| map_task_row!(conn, r))
          .map(|rows| rows.filter_map(|r| r.ok()).collect())
     }).unwrap_or_default()
 }
 
 #[tauri::command]
 pub fn create_task(state: State<DbState>, input: CreateTaskInput) -> Result<Task, String> {
-    let conn = state.0.lock().unwrap();
+    let guard = state.0.lock().unwrap();
+    let conn = guard.as_ref().ok_or("Database is locked")?;
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
     let position = input.position.unwrap_or_else(|| {
@@ -136,12 +139,13 @@ pub fn create_task(state: State<DbState>, input: CreateTaskInput) -> Result<Task
                 params![id, tid]).ok();
         }
     }
-    get_task_by_id(&conn, &id).ok_or("Task not found after insert".into())
+    get_task_by_id(conn, &id).ok_or("Task not found after insert".into())
 }
 
 #[tauri::command]
 pub fn update_task(state: State<DbState>, id: String, input: UpdateTaskInput) -> Result<Task, String> {
-    let conn = state.0.lock().unwrap();
+    let guard = state.0.lock().unwrap();
+    let conn = guard.as_ref().ok_or("Database is locked")?;
     let now = Utc::now().to_rfc3339();
     macro_rules! set_field {
         ($field:expr, $val:expr) => {
@@ -174,42 +178,81 @@ pub fn update_task(state: State<DbState>, id: String, input: UpdateTaskInput) ->
                 params![id, tid]).ok();
         }
     }
-    get_task_by_id(&conn, &id).ok_or("Task not found".into())
+    get_task_by_id(conn, &id).ok_or("Task not found".into())
 }
 
 #[tauri::command]
 pub fn delete_task(state: State<DbState>, id: String) -> Result<(), String> {
-    let conn = state.0.lock().unwrap();
+    let guard = state.0.lock().unwrap();
+    let conn = guard.as_ref().ok_or("Database is locked")?;
     conn.execute("DELETE FROM tasks WHERE id=?1", params![id])
         .map(|_| ()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn complete_task(state: State<DbState>, id: String, completed: bool) -> Result<Task, String> {
-    let conn = state.0.lock().unwrap();
+    let guard = state.0.lock().unwrap();
+    let conn = guard.as_ref().ok_or("Database is locked")?;
     let now = Utc::now().to_rfc3339();
     let completed_at: Option<String> = if completed { Some(now.clone()) } else { None };
     conn.execute("UPDATE tasks SET completed_at=?1, updated_at=?2 WHERE id=?3",
         params![completed_at, now, id]).map_err(|e| e.to_string())?;
-    get_task_by_id(&conn, &id).ok_or("Task not found".into())
+    get_task_by_id(conn, &id).ok_or("Task not found".into())
 }
 
 #[tauri::command]
 pub fn move_task(state: State<DbState>, id: String, new_parent_id: Option<String>, new_position: f64) -> Result<Task, String> {
-    let conn = state.0.lock().unwrap();
+    let guard = state.0.lock().unwrap();
+    let conn = guard.as_ref().ok_or("Database is locked")?;
     let now = Utc::now().to_rfc3339();
     conn.execute("UPDATE tasks SET parent_id=?1, position=?2, updated_at=?3 WHERE id=?4",
         params![new_parent_id, new_position, now, id]).map_err(|e| e.to_string())?;
-    get_task_by_id(&conn, &id).ok_or("Task not found".into())
+    get_task_by_id(conn, &id).ok_or("Task not found".into())
 }
 
 #[tauri::command]
 pub fn reorder_tasks(state: State<DbState>, ids_and_positions: Vec<(String, f64)>) -> Result<(), String> {
-    let conn = state.0.lock().unwrap();
+    let guard = state.0.lock().unwrap();
+    let conn = guard.as_ref().ok_or("Database is locked")?;
     let now = Utc::now().to_rfc3339();
     for (id, pos) in ids_and_positions {
         conn.execute("UPDATE tasks SET position=?1, updated_at=?2 WHERE id=?3",
             params![pos, now, id]).ok();
     }
     Ok(())
+}
+
+// ── Encryption commands ────────────────────────────────────────────────────────
+
+/// Returns true if the DB file is SQLCipher-encrypted (does not require open connection).
+#[tauri::command]
+pub fn check_db_encrypted() -> bool {
+    crate::db::is_db_encrypted()
+}
+
+/// Returns true if the database is currently locked (no open connection).
+#[tauri::command]
+pub fn is_db_locked(state: State<DbState>) -> bool {
+    state.0.lock().unwrap().is_none()
+}
+
+/// Unlock an encrypted database with the provided password.
+#[tauri::command]
+pub fn unlock_db(state: State<DbState>, password: String) -> Result<(), String> {
+    let conn = crate::db::open_with_key(&password)
+        .map_err(|_| "Wrong password or corrupted database".to_string())?;
+    let mut guard = state.0.lock().unwrap();
+    *guard = Some(conn);
+    Ok(())
+}
+
+/// Set or change the database password. Pass empty string to remove encryption.
+/// The database must already be unlocked (open connection required).
+#[tauri::command]
+pub fn set_db_password(state: State<DbState>, new_password: String) -> Result<(), String> {
+    let guard = state.0.lock().unwrap();
+    let conn = guard.as_ref().ok_or("Database is locked")?;
+    let escaped = new_password.replace('\'', "''");
+    conn.execute_batch(&format!("PRAGMA rekey='{}';", escaped))
+        .map_err(|e| e.to_string())
 }

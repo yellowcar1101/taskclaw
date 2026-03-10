@@ -11,11 +11,12 @@ use std::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let conn = db::open().expect("Failed to open database");
+    // Try to open without a key. Returns None if the DB is encrypted (needs unlock).
+    let conn_opt = db::open().ok();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .manage(DbState(Mutex::new(conn)))
+        .manage(DbState(Mutex::new(conn_opt)))
         .invoke_handler(tauri::generate_handler![
             // Tasks
             get_tasks,
@@ -47,6 +48,11 @@ pub fn run() {
             gdrive_connect,
             gdrive_upload,
             gdrive_download,
+            // Encryption
+            check_db_encrypted,
+            is_db_locked,
+            unlock_db,
+            set_db_password,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -38,6 +38,12 @@ export const api = {
   updateView: (id: string, payload: object): Promise<SavedView> => invoke('update_view', { id, payload }),
   deleteView: (id: string): Promise<void> => invoke('delete_view', { id }),
 
+  // Encryption
+  checkDbEncrypted: (): Promise<boolean> => invoke('check_db_encrypted'),
+  isDbLocked: (): Promise<boolean> => invoke('is_db_locked'),
+  unlockDb: (password: string): Promise<void> => invoke('unlock_db', { password }),
+  setDbPassword: (newPassword: string): Promise<void> => invoke('set_db_password', { newPassword }),
+
   // GDrive
   gdriveAuthStatus: (): Promise<boolean> => invoke('gdrive_auth_status'),
   gdriveConnect: (): Promise<{ success: boolean; message: string; synced_at?: string }> => invoke('gdrive_connect'),

@@ -9,11 +9,40 @@ pub fn db_path() -> PathBuf {
     p
 }
 
+/// Open the database without a key. Fails if the DB is encrypted.
 pub fn open() -> Result<Connection> {
     let conn = Connection::open(db_path())?;
+    // Verify we can read — this fails for an encrypted DB
+    conn.query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0))?;
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
     migrate(&conn)?;
     Ok(conn)
+}
+
+/// Open an encrypted database with the given password.
+pub fn open_with_key(key: &str) -> Result<Connection> {
+    let conn = Connection::open(db_path())?;
+    let escaped = key.replace('\'', "''");
+    conn.execute_batch(&format!("PRAGMA key='{}';", escaped))?;
+    // Verify key is correct — fails with "file is not a database" if wrong
+    conn.query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0))?;
+    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
+    migrate(&conn)?;
+    Ok(conn)
+}
+
+/// Returns true if the DB file exists and is SQLCipher-encrypted.
+pub fn is_db_encrypted() -> bool {
+    let path = db_path();
+    if !path.exists() {
+        return false;
+    }
+    let conn = match Connection::open(&path) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    conn.query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0))
+        .is_err()
 }
 
 pub fn migrate(conn: &Connection) -> Result<()> {
@@ -102,7 +131,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         "ALTER TABLE saved_views ADD COLUMN sort_dir TEXT NOT NULL DEFAULT 'asc'",
         "ALTER TABLE saved_views ADD COLUMN visible_fields TEXT NOT NULL DEFAULT '[]'",
     ] {
-        conn.execute(sql, []).ok(); // ignore "duplicate column" errors
+        conn.execute(sql, []).ok();
     }
 
     // Seed default flags if empty

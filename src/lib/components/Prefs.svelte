@@ -5,7 +5,60 @@
 
   export let open = false;
 
-  let activeTab: 'flags' | 'tags' = 'flags';
+  let activeTab: 'flags' | 'tags' | 'security' = 'flags';
+
+  // Security
+  let isEncrypted = false;
+  let secNewPw = '';
+  let secConfirmPw = '';
+  let secError = '';
+  let secSuccess = '';
+  let secBusy = false;
+
+  async function onSecurityTabOpen() {
+    isEncrypted = await api.checkDbEncrypted();
+    secNewPw = '';
+    secConfirmPw = '';
+    secError = '';
+    secSuccess = '';
+  }
+
+  $: if (activeTab === 'security') onSecurityTabOpen();
+
+  async function setPassword() {
+    secError = '';
+    secSuccess = '';
+    if (!secNewPw) { secError = 'Password cannot be empty.'; return; }
+    if (secNewPw !== secConfirmPw) { secError = 'Passwords do not match.'; return; }
+    secBusy = true;
+    try {
+      await api.setDbPassword(secNewPw);
+      secSuccess = 'Password set. Database is now encrypted.';
+      isEncrypted = true;
+      secNewPw = '';
+      secConfirmPw = '';
+    } catch (e: unknown) {
+      secError = e instanceof Error ? e.message : String(e);
+    } finally {
+      secBusy = false;
+    }
+  }
+
+  async function removePassword() {
+    if (!confirm('Remove the database password? The file will no longer be encrypted.')) return;
+    secError = '';
+    secSuccess = '';
+    secBusy = true;
+    try {
+      await api.setDbPassword('');
+      secSuccess = 'Password removed. Database is now unencrypted.';
+      isEncrypted = false;
+    } catch (e: unknown) {
+      secError = e instanceof Error ? e.message : String(e);
+    } finally {
+      secBusy = false;
+    }
+  }
 
   // Flags
   let newFlagName = '';
@@ -63,6 +116,7 @@
       <div class="tab-bar">
         <button class="tab" class:active={activeTab === 'flags'} on:click={() => activeTab = 'flags'}>Flags</button>
         <button class="tab" class:active={activeTab === 'tags'}  on:click={() => activeTab = 'tags'}>Tags</button>
+        <button class="tab" class:active={activeTab === 'security'} on:click={() => activeTab = 'security'}>Security</button>
       </div>
 
       {#if activeTab === 'flags'}
@@ -111,6 +165,59 @@
             <input class="name-input" bind:value={newTagName} placeholder="Tag name…"
               on:keydown={e => e.key === 'Enter' && createTag()} />
             <button class="mini-btn primary" on:click={createTag}>+ Add</button>
+          </div>
+        </div>
+      {:else}
+        <div class="tab-content">
+          <div class="sec-status">
+            {#if isEncrypted}
+              <span class="badge encrypted">🔒 Encrypted (AES-256)</span>
+            {:else}
+              <span class="badge plain">🔓 Not encrypted</span>
+            {/if}
+          </div>
+
+          <div class="sec-desc">
+            {isEncrypted
+              ? 'Your database is password-protected. Change or remove the password below.'
+              : 'Set a password to encrypt your database with AES-256 (SQLCipher). You will need to enter it each time you open the app.'}
+          </div>
+
+          {#if isEncrypted}
+            <div class="sec-section">
+              <div class="sec-label">Change Password</div>
+              <input class="name-input" type="password" placeholder="New password" bind:value={secNewPw} />
+              <input class="name-input" type="password" placeholder="Confirm new password" bind:value={secConfirmPw} />
+              <div class="sec-actions">
+                <button class="mini-btn primary" on:click={setPassword} disabled={secBusy}>
+                  {secBusy ? 'Saving…' : 'Change Password'}
+                </button>
+                <button class="mini-btn danger" on:click={removePassword} disabled={secBusy}>
+                  Remove Password
+                </button>
+              </div>
+            </div>
+          {:else}
+            <div class="sec-section">
+              <div class="sec-label">Set Password</div>
+              <input class="name-input" type="password" placeholder="New password" bind:value={secNewPw} />
+              <input class="name-input" type="password" placeholder="Confirm password" bind:value={secConfirmPw} />
+              <button class="mini-btn primary" on:click={setPassword} disabled={secBusy}>
+                {secBusy ? 'Encrypting…' : 'Set Password'}
+              </button>
+            </div>
+          {/if}
+
+          {#if secError}
+            <div class="sec-msg error">{secError}</div>
+          {/if}
+          {#if secSuccess}
+            <div class="sec-msg success">{secSuccess}</div>
+          {/if}
+
+          <div class="sec-path">
+            <span class="sec-path-label">Database file:</span>
+            <code>%LOCALAPPDATA%\taskclaw\tasks.db</code>
           </div>
         </div>
       {/if}
@@ -197,4 +304,27 @@
   .icon-btn.danger:hover { color: var(--red); }
 
   .tag-chip { font-size: 11px; padding: 2px 8px; border-radius: 10px; border: 1px solid; white-space: nowrap; font-family: sans-serif; flex: 1; }
+
+  .sec-status { display: flex; align-items: center; gap: 6px; }
+  .badge { font-size: 12px; font-family: sans-serif; padding: 3px 10px; border-radius: 12px; }
+  .badge.encrypted { background: #1a3a1a; color: #6abf69; border: 1px solid #6abf6944; }
+  .badge.plain { background: #2a2a1a; color: #d4a843; border: 1px solid #d4a84344; }
+
+  .sec-desc { font-size: 12px; color: var(--text-dim); font-family: sans-serif; line-height: 1.5; }
+
+  .sec-section { display: flex; flex-direction: column; gap: 6px; }
+  .sec-label { font-size: 11px; color: var(--text-dim); font-family: sans-serif; text-transform: uppercase; letter-spacing: 0.05em; }
+
+  .sec-actions { display: flex; gap: 6px; }
+
+  .mini-btn.danger { color: var(--red, #e05c5c); }
+  .mini-btn.danger:hover { background: #3a1a1a; }
+
+  .sec-msg { font-size: 12px; font-family: sans-serif; padding: 5px 8px; border-radius: 4px; }
+  .sec-msg.error { background: #3a1a1a; color: var(--red, #e05c5c); }
+  .sec-msg.success { background: #1a3a1a; color: #6abf69; }
+
+  .sec-path { font-size: 11px; color: var(--text-dim); font-family: sans-serif; margin-top: 4px; display: flex; flex-direction: column; gap: 3px; }
+  .sec-path-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .sec-path code { font-size: 11px; background: var(--surface-elevated); padding: 3px 6px; border-radius: 3px; word-break: break-all; }
 </style>
