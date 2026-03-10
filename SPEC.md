@@ -1791,25 +1791,154 @@ Manual Sync
 
 ## 16. Recurrence
 
-### 16.1 Data Flow
+### 16.1 Field Glossary
 
-`recurrence_rule` is stored as JSON in the task. No separate DB table.
+| Field | Type | Meaning |
+|---|---|---|
+| `pattern` | string | `"hourly"` \| `"daily"` \| `"weekly"` \| `"monthly"` \| `"yearly"` |
+| `interval` | integer ≥ 1 | Recur every N units of `pattern`. E.g. `pattern=weekly, interval=2` = fortnightly. |
+| `days_of_week` | int[] | For `pattern=weekly` only. 0=Mon … 6=Sun. At least one day must be set. Ignored for other patterns. |
+| `day_of_month` | int \| null | For `pattern=monthly` only. 1–31. If null, uses the day from the current `start_date`. If the value exceeds the days in a given month (e.g. 31 in February), use the last day of that month. |
+| `regenerate` | bool | If true: the "interval" is measured from the **completion date**, not from the previous occurrence date. Only relevant for `complete_task` trigger, not for calendar-based patterns. |
+| `start_date` | ISO datetime | The reference start datetime for the recurrence series (the first occurrence's start). Used to compute future occurrences. |
+| `due_date` | ISO datetime | Reference due datetime. The gap (`due_date − start_date`) is the **period** and is preserved on every advance. |
+| `lead_time_days` | integer ≥ 0 | The task row's `start_date` is set to `next_due_date − lead_time_days`. Allows the task to appear in views N days before it is actually due. Set to 0 to disable. |
+| `use_time` | bool | If false: store only date part (`YYYY-MM-DD`) in `tasks.start_date` and `tasks.due_date`. If true: store full datetime including time. |
+| `lock_period` | bool | If true: when advancing, keep `due_date − start_date` constant (the period is locked). If false: only advance `due_date`; `start_date` stays pinned unless `lead_time_days` > 0. |
+| `end_mode` | string | `"none"` = never ends. `"after_n"` = ends after N completions. `"by_date"` = ends on or before a fixed date. |
+| `end_after_n` | int \| null | Required when `end_mode = "after_n"`. |
+| `end_by_date` | ISO date \| null | Required when `end_mode = "by_date"`. |
+| `occurrences_completed` | integer | Incremented each time the task is completed or `skip_occurrence` is called. |
+| `advanced.subtask_reset` | string | `"none"` = leave subtasks as-is. `"reset_all"` = mark all direct subtasks uncompleted on advance. `"reset_if_all_complete"` = only reset if every subtask is already completed. |
+| `advanced.auto_recur` | string | `"disabled"` = recurrence only advances via explicit `complete_task` or `skip_occurrence`. `"on_any_subtask"` = advance when any direct subtask is completed. `"on_all_subtasks"` = advance when all subtasks are completed. |
+| `advanced.no_completed_copy` | bool | If true: do NOT mark the current row as `completed_at`; just advance dates in place. If false: first set `completed_at = NOW()`, then reset. |
 
-When a recurring task is completed (`complete_task` with `completed: true`):
-1. Rust checks if task has `recurrence_rule`
-2. If `advanced.auto_recur === 'disabled'`: do nothing extra (manual skip via `skip_occurrence`)
-3. If `advanced.no_completed_copy`: mark task as complete and immediately create next occurrence as a new task (or update in place)
-4. Calculate next occurrence dates from the rule
-5. Create/update task with new `start_date`, `due_date`; clear `completed_at`
+**`hourly` pattern note:** applies only to the time component of `start_date`/`due_date`. `use_time` must be true. Suitable for very frequent short tasks (e.g. medication). Interval = every N hours.
 
-### 16.2 skip_occurrence Command
+---
 
-For "Skip Occurrence" in right-click menu (recurring tasks only):
-- Calculate next occurrence without marking complete
-- Update task `start_date` / `due_date` to next occurrence
-- Increment `occurrences_completed` if end mode is `after_n`
+### 16.2 Next-Occurrence Calculation Algorithm
 
-### 16.3 Recurrence Modal Layout
+This is the canonical algorithm used by both `complete_task` (when recurrence applies) and `skip_occurrence`.
+
+```
+Input:
+  rule       — the RecurrenceRule struct
+  ref_date   — the reference date for the advance:
+               if rule.regenerate = true  → use today (completion date)
+               if rule.regenerate = false → use rule.start_date (calendar-based)
+
+Compute next_start:
+
+  if pattern = "hourly":
+    next_start = ref_date + interval hours
+    (keep minutes/seconds from ref_date)
+
+  if pattern = "daily":
+    next_start = ref_date + interval days
+
+  if pattern = "weekly":
+    Find the next calendar day after ref_date that falls on one of days_of_week,
+    counting only every `interval`-th week from the series origin.
+    Algorithm:
+      candidate = ref_date + 1 day
+      while true:
+        if candidate.weekday ∈ days_of_week
+          AND weeks_since_origin(candidate) % interval == 0:
+          next_start = candidate
+          break
+        candidate += 1 day
+    weeks_since_origin = floor((candidate − rule.start_date) / 7) / interval,
+    aligned to the origin week.
+
+  if pattern = "monthly":
+    target_day = rule.day_of_month ?? ref_date.day
+    next_month = ref_date.month + interval  (roll year if > 12)
+    next_start = date(next_month.year, next_month.month, min(target_day, days_in(next_month)))
+
+  if pattern = "yearly":
+    next_start = date(ref_date.year + interval, ref_date.month, ref_date.day)
+    (Feb 29 → Feb 28 on non-leap years)
+
+Compute next_due:
+  if lock_period:
+    period = rule.due_date − rule.start_date   (duration)
+    next_due = next_start + period
+  else:
+    advance_delta = next_start − rule.start_date
+    next_due = rule.due_date + advance_delta
+
+Compute task dates:
+  if lead_time_days > 0:
+    task.start_date = next_due − lead_time_days days
+  else:
+    task.start_date = next_start
+
+  task.due_date = next_due
+
+  if task.reminder_at is set:
+    reminder_offset = original_rule.due_date − original_task.reminder_at
+    task.reminder_at = next_due − reminder_offset
+
+Update rule:
+  rule.start_date = next_start
+  rule.due_date   = next_due
+  occurrences_completed += 1
+
+Check end condition:
+  if end_mode = "after_n" AND occurrences_completed >= end_after_n:
+    clear recurrence_rule from task (set to NULL)
+    do not advance — task stays completed
+
+  if end_mode = "by_date" AND next_start.date > end_by_date:
+    clear recurrence_rule from task
+    do not advance — task stays completed
+```
+
+---
+
+### 16.3 Data Flow: complete_task
+
+When `complete_task(id, completed: true)` is called on a task with a `recurrence_rule`:
+
+1. Parse `recurrence_rule` JSON.
+2. Check end condition with current `occurrences_completed` + 1. If series is over → mark `completed_at = NOW()`, clear `recurrence_rule`, return.
+3. If `advanced.no_completed_copy = true` → do NOT set `completed_at`.
+4. If `advanced.no_completed_copy = false` → set `completed_at = NOW()`.
+5. If `advanced.auto_recur = "disabled"` → stop here (do not advance dates — user must call `skip_occurrence` manually).
+6. Otherwise → run Next-Occurrence Algorithm, write new `start_date`, `due_date`, `reminder_at`, updated `recurrence_rule` JSON back to the same row, clear `completed_at`.
+7. If `advanced.subtask_reset ≠ "none"` → reset subtasks as specified.
+
+---
+
+### 16.4 skip_occurrence Command
+
+Advances to the next occurrence **without** marking the task complete. Intended for the "Skip Occurrence" right-click menu item.
+
+1. Parse `recurrence_rule`.
+2. Check end condition. If series over → clear `recurrence_rule`, return task as-is (completed_at stays NULL).
+3. Run Next-Occurrence Algorithm with `ref_date = today` (always uses today, regardless of `regenerate` flag).
+4. Write new dates and updated rule JSON. Do NOT touch `completed_at`.
+
+---
+
+### 16.5 Edge Cases
+
+| Scenario | Behaviour |
+|---|---|
+| `days_of_week` is empty on weekly pattern | Reject with error: "weekly recurrence requires at least one day selected". Do not save. |
+| `interval` = 0 | Reject: "interval must be at least 1". |
+| `end_by_date` is in the past when saving | Accept (no validation). The series will immediately terminate on the first complete/skip. |
+| `occurrences_completed >= end_after_n` already | Clear rule immediately on next complete/skip; do not advance. |
+| `day_of_month = 31` for a month with 30 days | Use last day of month (30). |
+| `day_of_month = 29` in non-leap February | Use 28. |
+| `start_date` not set on task when completing | Use today as `ref_date`. |
+| `due_date` not set, `lock_period = true` | Treat period as 0 days (`next_due = next_start`). |
+| Subtask reset with nested subtasks | Reset applies to direct children only (one level). |
+
+---
+
+### 16.6 Recurrence Modal Layout
 
 Full-width modal, two-panel layout (left: config, right: preview of next 5 occurrences).
 
@@ -1847,7 +1976,7 @@ End Occurrences
 
 **Right panel:** "Next occurrences" — list of next 5 start/due date pairs computed from the rule.
 
-### 16.4 Advanced Options Modal
+### 16.7 Advanced Options Modal
 
 ```
 Subtask reset on recurrence
