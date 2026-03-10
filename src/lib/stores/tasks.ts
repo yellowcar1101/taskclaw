@@ -1,21 +1,21 @@
 import { writable, derived, get } from 'svelte/store';
-import type { Task, Context, SortField, SortDir } from '../types';
+import type { Task, Flag, SortField, SortDir } from '../types';
 import { api } from '../api';
 
-// ── Raw data ─────────────────────────────────────────────────────────────────
+// ── Raw data ──────────────────────────────────────────────────────────────────
 export const allTasks = writable<Task[]>([]);
-export const contexts = writable<Context[]>([]);
+export const flags = writable<Flag[]>([]);
 
-// ── UI state ─────────────────────────────────────────────────────────────────
+// ── UI state ──────────────────────────────────────────────────────────────────
 export const expanded = writable<Set<string>>(new Set());
 export const selected = writable<Set<string>>(new Set());
 export const editingId = writable<string | null>(null);
 export const sortField = writable<SortField>('position');
 export const sortDir = writable<SortDir>('asc');
-export const filterContextId = writable<string | null>(null);
+export const filterFlagId = writable<string | null>(null);
 export const searchQuery = writable<string>('');
 
-// ── Derived tree ──────────────────────────────────────────────────────────────
+// ── Derived tree ───────────────────────────────────────────────────────────────
 export const taskMap = derived(allTasks, ($tasks) => {
   const map = new Map<string | null, Task[]>();
   for (const t of $tasks) {
@@ -30,12 +30,11 @@ function sortTasks(tasks: Task[], field: SortField, dir: SortDir): Task[] {
   return [...tasks].sort((a, b) => {
     let av: any, bv: any;
     switch (field) {
-      case 'caption':   av = a.caption.toLowerCase(); bv = b.caption.toLowerCase(); break;
-      case 'due_date':  av = a.due_date ?? '9999'; bv = b.due_date ?? '9999'; break;
-      case 'score':     av = a.score; bv = b.score; break;
-      case 'importance':av = a.importance; bv = b.importance; break;
-      case 'urgency':   av = a.urgency; bv = b.urgency; break;
-      default:          av = a.position; bv = b.position;
+      case 'caption':    av = a.caption.toLowerCase(); bv = b.caption.toLowerCase(); break;
+      case 'due_date':   av = a.due_date ?? '9999';   bv = b.due_date ?? '9999';   break;
+      case 'start_date': av = a.start_date ?? '9999'; bv = b.start_date ?? '9999'; break;
+      case 'starred':    av = a.starred ? 0 : 1;       bv = b.starred ? 0 : 1;      break;
+      default:           av = a.position;              bv = b.position;
     }
     const cmp = av < bv ? -1 : av > bv ? 1 : 0;
     return dir === 'asc' ? cmp : -cmp;
@@ -43,27 +42,25 @@ function sortTasks(tasks: Task[], field: SortField, dir: SortDir): Task[] {
 }
 
 export const rootTasks = derived(
-  [taskMap, sortField, sortDir, filterContextId, searchQuery],
-  ([$map, $sf, $sd, $ctx, $q]) => {
+  [taskMap, sortField, sortDir, filterFlagId, searchQuery],
+  ([$map, $sf, $sd, $flag, $q]) => {
     let tasks = $map.get(null) ?? [];
-    if ($ctx) tasks = tasks.filter(t => t.contexts.some(c => c.id === $ctx));
-    if ($q) tasks = tasks.filter(t => t.caption.toLowerCase().includes($q.toLowerCase()));
+    if ($flag) tasks = tasks.filter(t => t.flag_id === $flag);
+    if ($q)    tasks = tasks.filter(t => t.caption.toLowerCase().includes($q.toLowerCase()));
     return sortTasks(tasks, $sf, $sd);
   }
 );
 
 export function getChildren(parentId: string): Task[] {
   const map = get(taskMap);
-  const sf = get(sortField);
-  const sd = get(sortDir);
-  return sortTasks(map.get(parentId) ?? [], sf, sd);
+  return sortTasks(map.get(parentId) ?? [], get(sortField), get(sortDir));
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 export async function loadAll() {
-  const [tasks, ctxs] = await Promise.all([api.getAllFlat(), api.getContexts()]);
+  const [tasks, fls] = await Promise.all([api.getAllFlat(), api.getFlags()]);
   allTasks.set(tasks);
-  contexts.set(ctxs);
+  flags.set(fls);
 }
 
 export async function createTask(input: Parameters<typeof api.createTask>[0]) {
@@ -80,7 +77,6 @@ export async function updateTask(id: string, input: Parameters<typeof api.update
 
 export async function deleteTask(id: string) {
   await api.deleteTask(id);
-  // Also remove all descendants from local state
   const all = get(allTasks);
   const toRemove = new Set<string>();
   function collect(tid: string) {
@@ -109,8 +105,7 @@ export async function reorderTasks(idsAndPositions: [string, number][]) {
   await api.reorderTasks(idsAndPositions);
   allTasks.update(ts => ts.map(t => {
     const entry = idsAndPositions.find(([id]) => id === t.id);
-    if (entry) return { ...t, position: entry[1] };
-    return t;
+    return entry ? { ...t, position: entry[1] } : t;
   }));
 }
 
@@ -131,7 +126,7 @@ export function collapseAll() {
   expanded.set(new Set());
 }
 
-export function setSelected(id: string, multi: boolean, range: boolean) {
+export function setSelected(id: string, multi: boolean) {
   selected.update(s => {
     if (multi) {
       const next = new Set(s);

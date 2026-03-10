@@ -1,4 +1,4 @@
-export interface Context {
+export interface Flag {
   id: string;
   name: string;
   color: string;
@@ -14,7 +14,7 @@ export interface Tag {
 export interface EmailLink {
   id: string;
   task_id: string;
-  link_type: 'gmail' | 'outlook';
+  link_type: 'message_id' | 'thread_id' | 'mailto';
   link_data: string;
   subject?: string;
 }
@@ -28,19 +28,23 @@ export interface Task {
   created_at: string;
   updated_at: string;
   completed_at: string | null;
-  importance: number;
-  urgency: number;
-  effort: number;
+  start_date: string | null;
   due_date: string | null;
   reminder_at: string | null;
   recurrence_rule: string | null;
+  flag_id: string | null;
+  flag: Flag | null;
   starred: boolean;
   color: string | null;
-  contexts: Context[];
+  is_folder: boolean;
+  is_project: boolean;
+  hide_in_views: boolean;
+  subtasks_in_order: boolean;
+  inherit_dates: boolean;
+  custom_format: string | null;
   tags: Tag[];
   email_links: EmailLink[];
   has_children: boolean;
-  score: number;
 }
 
 export interface CreateTaskInput {
@@ -48,28 +52,56 @@ export interface CreateTaskInput {
   caption: string;
   note?: string;
   position?: number;
-  importance?: number;
-  urgency?: number;
-  effort?: number;
+  start_date?: string;
   due_date?: string;
+  reminder_at?: string;
+  flag_id?: string | null;
   starred?: boolean;
-  context_ids?: string[];
+  tag_ids?: string[];
+  is_folder?: boolean;
+  is_project?: boolean;
 }
 
 export interface UpdateTaskInput {
   caption?: string;
   note?: string;
-  importance?: number;
-  urgency?: number;
-  effort?: number;
+  start_date?: string;
   due_date?: string;
   reminder_at?: string;
   recurrence_rule?: string;
+  flag_id?: string;
   starred?: boolean;
   color?: string;
-  context_ids?: string[];
+  is_folder?: boolean;
+  is_project?: boolean;
+  hide_in_views?: boolean;
+  subtasks_in_order?: boolean;
+  inherit_dates?: boolean;
+  custom_format?: string;
   tag_ids?: string[];
 }
 
-export type SortField = 'position' | 'caption' | 'due_date' | 'score' | 'importance' | 'urgency';
+export interface ViewPayload {
+  name: string;
+  show_completed: boolean;
+  group_by: string;
+  sort_by: string;
+  sort_dir: string;
+  visible_fields: string[];
+  filter_json: string;
+}
+
+export interface SavedView {
+  id: string;
+  name: string;
+  show_completed: boolean;
+  group_by: string;
+  sort_by: string;
+  sort_dir: string;
+  visible_fields: string[];
+  filter_json: string;
+  position: number;
+}
+
+export type SortField = 'position' | 'caption' | 'due_date' | 'start_date' | 'starred';
 export type SortDir = 'asc' | 'desc';

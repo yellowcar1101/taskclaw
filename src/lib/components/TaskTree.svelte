@@ -2,20 +2,13 @@
   import TaskRow from './TaskRow.svelte';
   import {
     rootTasks, sortField, sortDir, toggleSort,
-    filterContextId, contexts, searchQuery,
+    filterFlagId, flags, searchQuery,
     expandAll, collapseAll, clearSelection, createTask, editingId
   } from '../stores/tasks';
-  import type { SortField } from '../types';
 
   async function addRootTask() {
     const t = await createTask({ parent_id: null, caption: 'New task' });
     editingId.set(t.id);
-  }
-
-  function col(field: SortField, label: string) {
-    return { field, label,
-      active: $sortField === field,
-      dir: $sortDir };
   }
 </script>
 
@@ -29,10 +22,10 @@
     bind:value={$searchQuery}
   />
 
-  <select class="ctx-filter" bind:value={$filterContextId}>
-    <option value={null}>All contexts</option>
-    {#each $contexts as ctx}
-      <option value={ctx.id}>{ctx.name}</option>
+  <select class="flag-filter" bind:value={$filterFlagId}>
+    <option value={null}>All flags</option>
+    {#each $flags as flag}
+      <option value={flag.id}>{flag.name}</option>
     {/each}
   </select>
 
@@ -40,12 +33,12 @@
 
   <button class="tb-btn" on:click={expandAll} title="Expand all">⊞</button>
   <button class="tb-btn" on:click={collapseAll} title="Collapse all">⊟</button>
-  <button class="tb-btn" on:click={clearSelection} title="Clear selection">✕ sel</button>
+  <button class="tb-btn" on:click={clearSelection} title="Clear selection">✕</button>
 </div>
 
 <!-- Column headers -->
 <div class="col-headers">
-  <div class="col-spacer"></div><!-- toggle + check -->
+  <div class="col-spacer"></div>
   <button class="col-header caption-col" on:click={() => toggleSort('caption')}>
     Task
     {#if $sortField === 'caption'}<span class="sort-arrow">{$sortDir === 'asc' ? '↑' : '↓'}</span>{/if}
@@ -54,13 +47,9 @@
     Due
     {#if $sortField === 'due_date'}<span class="sort-arrow">{$sortDir === 'asc' ? '↑' : '↓'}</span>{/if}
   </button>
-  <button class="col-header score-col" on:click={() => toggleSort('score')}>
-    Score
-    {#if $sortField === 'score'}<span class="sort-arrow">{$sortDir === 'asc' ? '↑' : '↓'}</span>{/if}
-  </button>
-  <button class="col-header iu-col" on:click={() => toggleSort('importance')}>
-    I/U
-    {#if $sortField === 'importance' || $sortField === 'urgency'}<span class="sort-arrow">{$sortDir === 'asc' ? '↑' : '↓'}</span>{/if}
+  <button class="col-header start-col" on:click={() => toggleSort('start_date')}>
+    Start
+    {#if $sortField === 'start_date'}<span class="sort-arrow">{$sortDir === 'asc' ? '↑' : '↓'}</span>{/if}
   </button>
 </div>
 
@@ -116,7 +105,7 @@
   }
   .search-input:focus { border-color: var(--accent); }
 
-  .ctx-filter {
+  .flag-filter {
     background: var(--input-bg);
     border: 1px solid var(--border);
     color: var(--text);
@@ -133,18 +122,17 @@
     align-items: center;
     gap: 4px;
     padding: 0 6px;
-    height: 24px;
+    height: 22px;
     background: var(--surface-elevated);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
-  .col-spacer { width: 46px; flex-shrink: 0; }  /* toggle(16) + check(16) + gap */
+  .col-spacer { width: 46px; flex-shrink: 0; }
   .col-header {
     background: none;
     border: none;
     color: var(--text-dim);
     font-size: 11px;
-    font-family: sans-serif;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     cursor: pointer;
@@ -159,8 +147,7 @@
   .col-header:hover { color: var(--text); background: var(--hover); }
   .col-header.caption-col { flex: 1; }
   .col-header.due-col     { width: 80px; flex-shrink: 0; }
-  .col-header.score-col   { width: 64px; flex-shrink: 0; }
-  .col-header.iu-col      { width: 36px; flex-shrink: 0; }
+  .col-header.start-col   { width: 70px; flex-shrink: 0; }
   .sort-arrow { color: var(--accent); font-size: 10px; }
 
   .task-list {
@@ -174,6 +161,5 @@
     color: var(--text-dim);
     padding: 60px 20px;
     font-size: 13px;
-    font-family: sans-serif;
   }
 </style>

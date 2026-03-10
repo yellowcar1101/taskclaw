@@ -47,7 +47,7 @@
   }
 
   function onClick(e: MouseEvent) {
-    setSelected(task.id, e.ctrlKey || e.metaKey, e.shiftKey);
+    setSelected(task.id, e.ctrlKey || e.metaKey);
   }
 
   async function onIndent() {
@@ -63,25 +63,19 @@
 
   async function onOutdent() {
     if (!task.parent_id) return;
-    const grandparent = siblings.find(s => s.id === task.parent_id)?.parent_id ?? null;
-    // Find parent's position among its siblings to insert after it
-    await moveTask(task.id, grandparent, task.position + 0.5);
+    await moveTask(task.id, null, task.position + 0.5);
   }
 
   async function onMoveUp() {
     if (myIndex <= 0) return;
     const prev = siblings[myIndex - 1];
-    await reorderTasks([
-      [task.id, prev.position - 0.5],
-    ]);
+    await reorderTasks([[task.id, prev.position - 0.5]]);
   }
 
   async function onMoveDown() {
     if (myIndex >= siblings.length - 1) return;
     const next = siblings[myIndex + 1];
-    await reorderTasks([
-      [task.id, next.position + 0.5],
-    ]);
+    await reorderTasks([[task.id, next.position + 0.5]]);
   }
 
   async function onDelete() {
@@ -103,8 +97,7 @@
   function formatDue(due: string | null): string {
     if (!due) return '';
     const d = new Date(due);
-    const now = new Date();
-    const diff = Math.floor((d.getTime() - now.getTime()) / 86400000);
+    const diff = Math.floor((d.getTime() - Date.now()) / 86400000);
     if (diff < 0) return `${Math.abs(diff)}d overdue`;
     if (diff === 0) return 'Today';
     if (diff === 1) return 'Tomorrow';
@@ -114,39 +107,29 @@
 
   function dueClass(due: string | null): string {
     if (!due) return '';
-    const d = new Date(due);
-    const diff = Math.floor((d.getTime() - Date.now()) / 86400000);
+    const diff = Math.floor((new Date(due).getTime() - Date.now()) / 86400000);
     if (diff < 0) return 'overdue';
     if (diff === 0) return 'today';
     if (diff <= 3) return 'soon';
     return '';
   }
 
-  // Drag and drop (reorder within same parent)
+  // Drag and drop
   let dragging = false;
   let dragOver = false;
 
   function onDragStart(e: DragEvent) {
     dragging = true;
     e.dataTransfer!.setData('taskId', task.id);
-    e.dataTransfer!.setData('parentId', task.parent_id ?? '');
     e.dataTransfer!.effectAllowed = 'move';
   }
   function onDragEnd() { dragging = false; }
-
-  function onDragOver(e: DragEvent) {
-    e.preventDefault();
-    dragOver = true;
-    e.dataTransfer!.dropEffect = 'move';
-  }
+  function onDragOver(e: DragEvent) { e.preventDefault(); dragOver = true; e.dataTransfer!.dropEffect = 'move'; }
   function onDragLeave() { dragOver = false; }
-
   async function onDrop(e: DragEvent) {
-    e.preventDefault();
-    dragOver = false;
+    e.preventDefault(); dragOver = false;
     const srcId = e.dataTransfer!.getData('taskId');
     if (!srcId || srcId === task.id) return;
-    // Drop on a row = insert before that row
     await reorderTasks([[srcId, task.position - 0.5]]);
   }
 </script>
@@ -181,7 +164,6 @@
     class="icon-btn toggle"
     class:invisible={!task.has_children}
     on:click|stopPropagation={() => toggleExpanded(task.id)}
-    title={isExpanded ? 'Collapse' : 'Expand'}
     tabindex="-1"
   >
     {isExpanded ? '▾' : '▸'}
@@ -209,25 +191,23 @@
       <span class="caption-text" class:starred={task.starred}>{task.caption}</span>
     {/if}
 
-    <!-- Context chips -->
-    {#each task.contexts as ctx}
-      <span class="ctx-chip" style="background:{ctx.color}22;color:{ctx.color};border-color:{ctx.color}44">
-        {ctx.name}
+    <!-- Flag indicator -->
+    {#if task.flag}
+      <span class="flag-chip" style="background:{task.flag.color}22;color:{task.flag.color};border-color:{task.flag.color}44">
+        {task.flag.name}
+      </span>
+    {/if}
+
+    <!-- Tag chips -->
+    {#each task.tags as tag}
+      <span class="tag-chip" style="background:{tag.color}22;color:{tag.color};border-color:{tag.color}44">
+        {tag.name}
       </span>
     {/each}
 
-    <!-- Email link indicator -->
+    <!-- Email link indicators -->
     {#each task.email_links as link}
-      <a
-        class="email-badge"
-        href={link.link_type === 'gmail'
-          ? `https://mail.google.com/mail/u/0/#search/${link.link_data}`
-          : link.link_data}
-        title={link.subject ?? 'Open email'}
-        on:click|stopPropagation
-      >
-        {link.link_type === 'gmail' ? '✉' : '📧'}
-      </a>
+      <span class="email-badge" title={link.subject ?? 'Email link'}>✉</span>
     {/each}
   </div>
 
@@ -236,23 +216,16 @@
     {formatDue(task.due_date)}
   </div>
 
-  <!-- Score badge -->
-  <div class="col-score" title="Priority score: {task.score.toFixed(0)}">
-    <div class="score-bar" style="width:{task.score}%"></div>
-    <span class="score-num">{task.score.toFixed(0)}</span>
+  <!-- Start date -->
+  <div class="col-start">
+    {task.start_date ?? ''}
   </div>
 
-  <!-- I/U badges -->
-  <div class="col-iu">
-    <span class="iu-badge" title="Importance">{task.importance}</span>
-    <span class="iu-badge" title="Urgency">{task.urgency}</span>
-  </div>
-
-  <!-- Hover action buttons -->
+  <!-- Hover actions -->
   {#if hovered || isSelected}
     <div class="actions" on:click|stopPropagation role="none">
       <button class="icon-btn" on:click={addSubtask} title="Add subtask">+</button>
-      <button class="icon-btn" on:click={onIndent} title="Indent (make child of row above)" disabled={myIndex === 0}>⇥</button>
+      <button class="icon-btn" on:click={onIndent} title="Indent" disabled={myIndex === 0}>⇥</button>
       <button class="icon-btn" on:click={onOutdent} title="Outdent" disabled={!task.parent_id}>⇤</button>
       <button class="icon-btn" on:click={onMoveUp} title="Move up" disabled={myIndex === 0}>↑</button>
       <button class="icon-btn" on:click={onMoveDown} title="Move down" disabled={myIndex >= siblings.length - 1}>↓</button>
@@ -274,17 +247,13 @@
     margin: 0;
     transition: background 0.1s, height 0.1s;
   }
-  .drop-zone.active {
-    height: 4px;
-    background: var(--accent);
-    border-radius: 2px;
-  }
+  .drop-zone.active { height: 4px; background: var(--accent); border-radius: 2px; }
 
   .task-row {
     display: flex;
     align-items: center;
     gap: 4px;
-    height: 30px;
+    height: 28px;
     border-radius: 3px;
     cursor: default;
     user-select: none;
@@ -350,23 +319,20 @@
     outline: none;
   }
 
-  .ctx-chip {
+  .flag-chip, .tag-chip {
     font-size: 10px;
     padding: 1px 5px;
     border-radius: 10px;
     border: 1px solid;
     white-space: nowrap;
     flex-shrink: 0;
-    font-family: sans-serif;
   }
 
   .email-badge {
     font-size: 11px;
-    text-decoration: none;
-    opacity: 0.7;
+    opacity: 0.6;
     flex-shrink: 0;
   }
-  .email-badge:hover { opacity: 1; }
 
   .col-due {
     font-size: 11px;
@@ -374,46 +340,17 @@
     width: 80px;
     text-align: right;
     flex-shrink: 0;
-    font-family: sans-serif;
   }
   .col-due.overdue { color: var(--red); font-weight: 600; }
   .col-due.today   { color: var(--amber); font-weight: 600; }
   .col-due.soon    { color: var(--amber); }
 
-  .col-score {
-    width: 64px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    flex-shrink: 0;
-  }
-  .score-bar {
-    height: 4px;
-    border-radius: 2px;
-    background: var(--accent);
-    opacity: 0.6;
-    transition: width 0.3s;
-  }
-  .score-num {
-    font-size: 10px;
+  .col-start {
+    font-size: 11px;
     color: var(--text-dim);
-    width: 20px;
+    width: 70px;
     text-align: right;
-    font-family: sans-serif;
-  }
-
-  .col-iu {
-    width: 36px;
-    display: flex;
-    gap: 2px;
     flex-shrink: 0;
-  }
-  .iu-badge {
-    font-size: 10px;
-    color: var(--text-dim);
-    font-family: sans-serif;
-    width: 14px;
-    text-align: center;
   }
 
   .actions {
