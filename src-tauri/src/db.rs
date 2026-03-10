@@ -18,6 +18,13 @@ pub fn open() -> Result<Connection> {
 
 pub fn migrate(conn: &Connection) -> Result<()> {
     conn.execute_batch("
+        CREATE TABLE IF NOT EXISTS flags (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            color TEXT NOT NULL DEFAULT '#FF6B6B',
+            position REAL NOT NULL DEFAULT 0
+        );
+
         CREATE TABLE IF NOT EXISTS tasks (
             id TEXT PRIMARY KEY,
             parent_id TEXT,
@@ -27,30 +34,15 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             completed_at TEXT,
-            importance INTEGER NOT NULL DEFAULT 3,
-            urgency INTEGER NOT NULL DEFAULT 3,
-            effort INTEGER NOT NULL DEFAULT 3,
+            start_date TEXT,
             due_date TEXT,
             reminder_at TEXT,
             recurrence_rule TEXT,
+            flag_id TEXT,
             starred INTEGER NOT NULL DEFAULT 0,
             color TEXT,
-            FOREIGN KEY (parent_id) REFERENCES tasks(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS contexts (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL UNIQUE,
-            color TEXT NOT NULL DEFAULT '#4A9EFF',
-            position REAL NOT NULL DEFAULT 0
-        );
-
-        CREATE TABLE IF NOT EXISTS task_contexts (
-            task_id TEXT NOT NULL,
-            context_id TEXT NOT NULL,
-            PRIMARY KEY (task_id, context_id),
-            FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
-            FOREIGN KEY (context_id) REFERENCES contexts(id) ON DELETE CASCADE
+            FOREIGN KEY (parent_id) REFERENCES tasks(id) ON DELETE CASCADE,
+            FOREIGN KEY (flag_id) REFERENCES flags(id) ON DELETE SET NULL
         );
 
         CREATE TABLE IF NOT EXISTS tags (
@@ -79,9 +71,11 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         CREATE TABLE IF NOT EXISTS saved_views (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
-            filter_json TEXT NOT NULL DEFAULT '{}',
-            sort_field TEXT NOT NULL DEFAULT 'position',
+            show_completed INTEGER NOT NULL DEFAULT 0,
+            group_by TEXT NOT NULL DEFAULT 'none',
+            sort_by TEXT NOT NULL DEFAULT 'position',
             sort_dir TEXT NOT NULL DEFAULT 'asc',
+            visible_fields TEXT NOT NULL DEFAULT '[]',
             position REAL NOT NULL DEFAULT 0
         );
 
@@ -92,26 +86,38 @@ pub fn migrate(conn: &Connection) -> Result<()> {
 
         CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id);
         CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date);
-        CREATE INDEX IF NOT EXISTS idx_task_contexts_task ON task_contexts(task_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_start ON tasks(start_date);
+        CREATE INDEX IF NOT EXISTS idx_tasks_flag ON tasks(flag_id);
     ")?;
 
-    // Seed default contexts if empty
-    let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM contexts", [], |r| r.get(0)
-    ).unwrap_or(0);
-    if count == 0 {
+    // Add columns to existing installs (idempotent — fails silently if already exists)
+    for sql in [
+        "ALTER TABLE tasks ADD COLUMN start_date TEXT",
+        "ALTER TABLE tasks ADD COLUMN flag_id TEXT REFERENCES flags(id) ON DELETE SET NULL",
+        "ALTER TABLE tasks ADD COLUMN reminder_at TEXT",
+        "ALTER TABLE tasks ADD COLUMN recurrence_rule TEXT",
+        "ALTER TABLE saved_views ADD COLUMN show_completed INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE saved_views ADD COLUMN group_by TEXT NOT NULL DEFAULT 'none'",
+        "ALTER TABLE saved_views ADD COLUMN sort_by TEXT NOT NULL DEFAULT 'position'",
+        "ALTER TABLE saved_views ADD COLUMN sort_dir TEXT NOT NULL DEFAULT 'asc'",
+        "ALTER TABLE saved_views ADD COLUMN visible_fields TEXT NOT NULL DEFAULT '[]'",
+    ] {
+        conn.execute(sql, []).ok(); // ignore "duplicate column" errors
+    }
+
+    // Seed default flags if empty
+    let flag_count: i64 = conn.query_row("SELECT COUNT(*) FROM flags", [], |r| r.get(0)).unwrap_or(0);
+    if flag_count == 0 {
         let defaults = [
-            ("@home",     "#4A9EFF"),
-            ("@work",     "#FF6B6B"),
-            ("@computer", "#A8E063"),
-            ("@errands",  "#FFA94D"),
-            ("@phone",    "#CC5DE8"),
+            ("🔴 Urgent",    "#E05C5C", 0.0),
+            ("🟡 Review",    "#D4A843", 1.0),
+            ("🔵 Waiting",   "#4A9EFF", 2.0),
+            ("🟢 Delegated", "#6ABF69", 3.0),
         ];
-        for (name, color) in defaults {
+        for (name, color, pos) in defaults {
             let id = uuid::Uuid::new_v4().to_string();
-            let pos = defaults.iter().position(|(n, _)| *n == name).unwrap_or(0) as f64;
             conn.execute(
-                "INSERT INTO contexts (id, name, color, position) VALUES (?1, ?2, ?3, ?4)",
+                "INSERT INTO flags (id, name, color, position) VALUES (?1,?2,?3,?4)",
                 params![id, name, color, pos],
             )?;
         }

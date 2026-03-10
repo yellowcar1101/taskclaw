@@ -1,12 +1,20 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import '../app.css';
-  import Sidebar from '$lib/components/Sidebar.svelte';
   import TaskTree from '$lib/components/TaskTree.svelte';
-  import { loadAll } from '$lib/stores/tasks';
+  import GroupedView from '$lib/components/GroupedView.svelte';
+  import ViewsPanel from '$lib/components/ViewsPanel.svelte';
+  import TaskDetail from '$lib/components/TaskDetail.svelte';
   import SyncBar from '$lib/components/SyncBar.svelte';
+  import Prefs from '$lib/components/Prefs.svelte';
+  import {
+    loadAll, views, activeTabId, detailTaskId, showPrefs
+  } from '$lib/stores/tasks';
+  import type { SavedView } from '$lib/types';
 
   let ready = false;
+
+  $: activeView = $views.find((v: SavedView) => v.id === $activeTabId) ?? null;
 
   onMount(async () => {
     await loadAll();
@@ -15,23 +23,60 @@
 </script>
 
 <div class="app-shell">
+  <!-- Titlebar -->
   <header class="titlebar">
     <span class="app-name">TaskClaw</span>
-    <span class="spacer"></span>
-    <SyncBar />
+    <div class="tab-bar">
+      <button
+        class="tab"
+        class:active={$activeTabId === 'outline'}
+        on:click={() => activeTabId.set('outline')}
+      >
+        ☰ Outline
+      </button>
+      {#each $views as view (view.id)}
+        <button
+          class="tab"
+          class:active={$activeTabId === view.id}
+          on:click={() => activeTabId.set(view.id)}
+        >
+          {view.name}
+        </button>
+      {/each}
+    </div>
+    <div class="titlebar-right">
+      <button class="tb-icon" on:click={() => showPrefs.set(true)} title="Preferences">⚙</button>
+      <SyncBar />
+    </div>
   </header>
 
+  <!-- Main area -->
   <div class="main-area">
-    <Sidebar />
+    <!-- Content -->
     <div class="content">
-      {#if ready}
-        <TaskTree />
-      {:else}
+      {#if !ready}
         <div class="loading">Loading…</div>
+      {:else if $activeTabId === 'outline'}
+        <TaskTree />
+      {:else if activeView}
+        <GroupedView view={activeView} />
+      {:else}
+        <div class="loading">Select a view</div>
       {/if}
     </div>
+
+    <!-- Task detail panel (when a task is open) -->
+    {#if $detailTaskId}
+      <TaskDetail />
+    {/if}
+
+    <!-- Views panel (right side) -->
+    <ViewsPanel />
   </div>
 </div>
+
+<!-- Preferences modal -->
+<Prefs bind:open={$showPrefs} />
 
 <style>
   .app-shell {
@@ -45,11 +90,12 @@
   .titlebar {
     display: flex;
     align-items: center;
-    height: 34px;
-    padding: 0 12px;
+    height: 36px;
+    padding: 0 0 0 12px;
     background: var(--surface);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
+    gap: 8px;
     -webkit-app-region: drag;
     user-select: none;
   }
@@ -61,9 +107,64 @@
     letter-spacing: 0.05em;
     font-family: 'Cascadia Code', 'Fira Code', monospace;
     -webkit-app-region: no-drag;
+    flex-shrink: 0;
   }
 
-  .spacer { flex: 1; }
+  .tab-bar {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    flex: 1;
+    overflow-x: auto;
+    -webkit-app-region: no-drag;
+    height: 100%;
+    padding: 4px 0 0;
+  }
+  .tab-bar::-webkit-scrollbar { display: none; }
+
+  .tab {
+    background: none;
+    border: none;
+    border-top: 2px solid transparent;
+    border-radius: 0;
+    color: var(--text-dim);
+    padding: 0 14px;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: sans-serif;
+    white-space: nowrap;
+    transition: color 0.1s, background 0.1s;
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+  }
+  .tab:hover { color: var(--text); background: var(--hover); }
+  .tab.active {
+    color: var(--accent);
+    border-top-color: var(--accent);
+    background: var(--bg);
+  }
+
+  .titlebar-right {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 8px;
+    -webkit-app-region: no-drag;
+    flex-shrink: 0;
+  }
+
+  .tb-icon {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 3px 6px;
+    border-radius: 4px;
+    transition: color 0.1s, background 0.1s;
+  }
+  .tb-icon:hover { color: var(--text); background: var(--hover); }
 
   .main-area {
     display: flex;

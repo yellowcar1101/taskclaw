@@ -5,7 +5,7 @@ mod commands;
 
 use commands::tasks::DbState;
 use commands::tasks::*;
-use commands::contexts::*;
+use commands::flags::*;
 use commands::sync::*;
 use std::sync::Mutex;
 
@@ -26,11 +26,22 @@ pub fn run() {
             complete_task,
             move_task,
             reorder_tasks,
-            // Contexts & links
-            get_contexts,
-            create_context,
-            delete_context,
+            // Flags & tags
+            get_flags,
+            create_flag,
+            update_flag,
+            delete_flag,
+            get_tags,
+            create_tag,
+            delete_tag,
+            // Email links
             add_email_link,
+            delete_email_link,
+            // Views
+            get_views,
+            create_view,
+            update_view,
+            delete_view,
             // GDrive sync
             gdrive_auth_status,
             gdrive_connect,

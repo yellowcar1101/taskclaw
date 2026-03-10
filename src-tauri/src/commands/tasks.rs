@@ -8,122 +8,105 @@ use crate::types::*;
 
 pub struct DbState(pub Mutex<Connection>);
 
-fn load_task_extras(conn: &Connection, task_id: &str) -> (Vec<Context>, Vec<Tag>, Vec<EmailLink>) {
-    let contexts = conn.prepare(
-        "SELECT c.id, c.name, c.color, c.position FROM contexts c
-         JOIN task_contexts tc ON c.id = tc.context_id
-         WHERE tc.task_id = ?1 ORDER BY c.position"
-    ).and_then(|mut s| {
-        s.query_map(params![task_id], |r| Ok(Context {
-            id: r.get(0)?,
-            name: r.get(1)?,
-            color: r.get(2)?,
-            position: r.get(3)?,
-        })).map(|rows| rows.filter_map(|r| r.ok()).collect())
-    }).unwrap_or_default();
-
-    let tags = conn.prepare(
-        "SELECT t.id, t.name, t.color FROM tags t
-         JOIN task_tags tt ON t.id = tt.tag_id
-         WHERE tt.task_id = ?1"
-    ).and_then(|mut s| {
-        s.query_map(params![task_id], |r| Ok(Tag {
-            id: r.get(0)?,
-            name: r.get(1)?,
-            color: r.get(2)?,
-        })).map(|rows| rows.filter_map(|r| r.ok()).collect())
-    }).unwrap_or_default();
-
-    let email_links = conn.prepare(
-        "SELECT id, task_id, link_type, link_data, subject FROM email_links WHERE task_id = ?1"
-    ).and_then(|mut s| {
-        s.query_map(params![task_id], |r| Ok(EmailLink {
-            id: r.get(0)?,
-            task_id: r.get(1)?,
-            link_type: r.get(2)?,
-            link_data: r.get(3)?,
-            subject: r.get(4)?,
-        })).map(|rows| rows.filter_map(|r| r.ok()).collect())
-    }).unwrap_or_default();
-
-    (contexts, tags, email_links)
+fn load_flag(conn: &Connection, flag_id: &Option<String>) -> Option<Flag> {
+    let id = flag_id.as_ref()?;
+    conn.query_row(
+        "SELECT id, name, color, position FROM flags WHERE id=?1",
+        params![id],
+        |r| Ok(Flag { id: r.get(0)?, name: r.get(1)?, color: r.get(2)?, position: r.get(3)? })
+    ).ok()
 }
 
-fn row_to_task(conn: &Connection, id: String, parent_id: Option<String>, caption: String,
+fn load_tags(conn: &Connection, task_id: &str) -> Vec<Tag> {
+    conn.prepare(
+        "SELECT t.id, t.name, t.color FROM tags t JOIN task_tags tt ON t.id=tt.tag_id WHERE tt.task_id=?1"
+    ).and_then(|mut s| {
+        s.query_map(params![task_id], |r| Ok(Tag { id: r.get(0)?, name: r.get(1)?, color: r.get(2)? }))
+         .map(|rows| rows.filter_map(|r| r.ok()).collect())
+    }).unwrap_or_default()
+}
+
+fn load_email_links(conn: &Connection, task_id: &str) -> Vec<EmailLink> {
+    conn.prepare(
+        "SELECT id, task_id, link_type, link_data, subject FROM email_links WHERE task_id=?1"
+    ).and_then(|mut s| {
+        s.query_map(params![task_id], |r| Ok(EmailLink {
+            id: r.get(0)?, task_id: r.get(1)?, link_type: r.get(2)?,
+            link_data: r.get(3)?, subject: r.get(4)?
+        })).map(|rows| rows.filter_map(|r| r.ok()).collect())
+    }).unwrap_or_default()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_task(conn: &Connection, id: String, parent_id: Option<String>, caption: String,
     note: String, position: f64, created_at: String, updated_at: String,
-    completed_at: Option<String>, importance: i32, urgency: i32, effort: i32,
-    due_date: Option<String>, reminder_at: Option<String>, recurrence_rule: Option<String>,
-    starred: bool, color: Option<String>) -> Task
+    completed_at: Option<String>, start_date: Option<String>, due_date: Option<String>,
+    reminder_at: Option<String>, recurrence_rule: Option<String>,
+    flag_id: Option<String>, starred: bool, color: Option<String>) -> Task
 {
     let has_children: bool = conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM tasks WHERE parent_id = ?1 AND completed_at IS NULL)",
+        "SELECT EXISTS(SELECT 1 FROM tasks WHERE parent_id=?1 AND completed_at IS NULL)",
         params![&id], |r| r.get(0)
     ).unwrap_or(false);
+    let flag = load_flag(conn, &flag_id);
+    let tags = load_tags(conn, &id);
+    let email_links = load_email_links(conn, &id);
+    Task { id, parent_id, caption, note, position, created_at, updated_at, completed_at,
+           start_date, due_date, reminder_at, recurrence_rule, flag_id, flag,
+           starred, color, tags, email_links, has_children }
+}
 
-    let score = compute_score(importance, urgency, &due_date);
-    let (contexts, tags, email_links) = load_task_extras(conn, &id);
+const TASK_SELECT: &str = "SELECT id, parent_id, caption, note, position, created_at, updated_at,
+    completed_at, start_date, due_date, reminder_at, recurrence_rule, flag_id, starred, color FROM tasks";
 
-    Task {
-        id, parent_id, caption, note, position, created_at, updated_at, completed_at,
-        importance, urgency, effort, due_date, reminder_at, recurrence_rule,
-        starred, color, contexts, tags, email_links, has_children, score,
-    }
+macro_rules! map_task_row {
+    ($conn:expr, $row:ident) => {{
+        let id: String = $row.get(0)?;
+        let parent_id: Option<String> = $row.get(1)?;
+        let caption: String = $row.get(2)?;
+        let note: String = $row.get(3)?;
+        let position: f64 = $row.get(4)?;
+        let created_at: String = $row.get(5)?;
+        let updated_at: String = $row.get(6)?;
+        let completed_at: Option<String> = $row.get(7)?;
+        let start_date: Option<String> = $row.get(8)?;
+        let due_date: Option<String> = $row.get(9)?;
+        let reminder_at: Option<String> = $row.get(10)?;
+        let recurrence_rule: Option<String> = $row.get(11)?;
+        let flag_id: Option<String> = $row.get(12)?;
+        let starred: bool = $row.get(13)?;
+        let color: Option<String> = $row.get(14)?;
+        Ok(build_task($conn, id, parent_id, caption, note, position, created_at, updated_at,
+            completed_at, start_date, due_date, reminder_at, recurrence_rule, flag_id, starred, color))
+    }};
+}
+
+fn get_task_by_id(conn: &Connection, id: &str) -> Option<Task> {
+    conn.query_row(
+        &format!("{} WHERE id=?1", TASK_SELECT),
+        params![id],
+        |r| map_task_row!(conn, r)
+    ).ok()
 }
 
 #[tauri::command]
 pub fn get_tasks(state: State<DbState>, parent_id: Option<String>) -> Vec<Task> {
     let conn = state.0.lock().unwrap();
-    let sql = "SELECT id, parent_id, caption, note, position, created_at, updated_at,
-                completed_at, importance, urgency, effort, due_date, reminder_at,
-                recurrence_rule, starred, color
-               FROM tasks WHERE parent_id IS ?1 AND completed_at IS NULL
-               ORDER BY position";
-    conn.prepare(sql).and_then(|mut s| {
-        s.query_map(params![parent_id], |r| {
-            Ok((
-                r.get::<_,String>(0)?, r.get::<_,Option<String>>(1)?,
-                r.get::<_,String>(2)?, r.get::<_,String>(3)?,
-                r.get::<_,f64>(4)?, r.get::<_,String>(5)?, r.get::<_,String>(6)?,
-                r.get::<_,Option<String>>(7)?, r.get::<_,i32>(8)?,
-                r.get::<_,i32>(9)?, r.get::<_,i32>(10)?,
-                r.get::<_,Option<String>>(11)?, r.get::<_,Option<String>>(12)?,
-                r.get::<_,Option<String>>(13)?, r.get::<_,bool>(14)?,
-                r.get::<_,Option<String>>(15)?
-            ))
-        }).map(|rows| {
-            rows.filter_map(|r| r.ok())
-                .map(|(id, pid, cap, note, pos, ca, ua, compl, imp, urg, eff, due, rem, rec, star, col)| {
-                    row_to_task(&conn, id, pid, cap, note, pos, ca, ua, compl, imp, urg, eff, due, rem, rec, star, col)
-                }).collect()
-        })
+    let sql = format!("{} WHERE parent_id IS ?1 AND completed_at IS NULL ORDER BY position", TASK_SELECT);
+    conn.prepare(&sql).and_then(|mut s| {
+        s.query_map(params![parent_id], |r| map_task_row!(&conn, r))
+         .map(|rows| rows.filter_map(|r| r.ok()).collect())
     }).unwrap_or_default()
 }
 
 #[tauri::command]
-pub fn get_all_tasks_flat(state: State<DbState>) -> Vec<Task> {
+pub fn get_all_tasks_flat(state: State<DbState>, include_completed: Option<bool>) -> Vec<Task> {
     let conn = state.0.lock().unwrap();
-    let sql = "SELECT id, parent_id, caption, note, position, created_at, updated_at,
-                completed_at, importance, urgency, effort, due_date, reminder_at,
-                recurrence_rule, starred, color
-               FROM tasks WHERE completed_at IS NULL ORDER BY position";
-    conn.prepare(sql).and_then(|mut s| {
-        s.query_map([], |r| {
-            Ok((
-                r.get::<_,String>(0)?, r.get::<_,Option<String>>(1)?,
-                r.get::<_,String>(2)?, r.get::<_,String>(3)?,
-                r.get::<_,f64>(4)?, r.get::<_,String>(5)?, r.get::<_,String>(6)?,
-                r.get::<_,Option<String>>(7)?, r.get::<_,i32>(8)?,
-                r.get::<_,i32>(9)?, r.get::<_,i32>(10)?,
-                r.get::<_,Option<String>>(11)?, r.get::<_,Option<String>>(12)?,
-                r.get::<_,Option<String>>(13)?, r.get::<_,bool>(14)?,
-                r.get::<_,Option<String>>(15)?
-            ))
-        }).map(|rows| {
-            rows.filter_map(|r| r.ok())
-                .map(|(id, pid, cap, note, pos, ca, ua, compl, imp, urg, eff, due, rem, rec, star, col)| {
-                    row_to_task(&conn, id, pid, cap, note, pos, ca, ua, compl, imp, urg, eff, due, rem, rec, star, col)
-                }).collect()
-        })
+    let completed_clause = if include_completed.unwrap_or(false) { "" } else { "WHERE completed_at IS NULL" };
+    let sql = format!("{} {} ORDER BY position", TASK_SELECT, completed_clause);
+    conn.prepare(&sql).and_then(|mut s| {
+        s.query_map([], |r| map_task_row!(&conn, r))
+         .map(|rows| rows.filter_map(|r| r.ok()).collect())
     }).unwrap_or_default()
 }
 
@@ -132,42 +115,27 @@ pub fn create_task(state: State<DbState>, input: CreateTaskInput) -> Result<Task
     let conn = state.0.lock().unwrap();
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
-
     let position = input.position.unwrap_or_else(|| {
         let max: f64 = conn.query_row(
             "SELECT COALESCE(MAX(position), 0) FROM tasks WHERE parent_id IS ?1",
-            params![input.parent_id],
-            |r| r.get(0)
+            params![input.parent_id], |r| r.get(0)
         ).unwrap_or(0.0);
         max + 1000.0
     });
-
     conn.execute(
         "INSERT INTO tasks (id, parent_id, caption, note, position, created_at, updated_at,
-          importance, urgency, effort, due_date, starred, color)
-         VALUES (?1,?2,?3,?4,?5,?6,?6,?7,?8,?9,?10,?11,?12)",
-        params![
-            id, input.parent_id, input.caption,
-            input.note.unwrap_or_default(),
-            position, now,
-            input.importance.unwrap_or(3),
-            input.urgency.unwrap_or(3),
-            input.effort.unwrap_or(3),
-            input.due_date,
-            input.starred.unwrap_or(false),
-            input.color,
-        ],
+          start_date, due_date, flag_id, starred)
+         VALUES (?1,?2,?3,?4,?5,?6,?6,?7,?8,?9,?10)",
+        params![id, input.parent_id, input.caption, input.note.unwrap_or_default(),
+                position, now, input.start_date, input.due_date, input.flag_id,
+                input.starred.unwrap_or(false)],
     ).map_err(|e| e.to_string())?;
-
-    if let Some(ctx_ids) = &input.context_ids {
-        for cid in ctx_ids {
-            conn.execute(
-                "INSERT OR IGNORE INTO task_contexts (task_id, context_id) VALUES (?1, ?2)",
-                params![id, cid],
-            ).ok();
+    if let Some(tag_ids) = &input.tag_ids {
+        for tid in tag_ids {
+            conn.execute("INSERT OR IGNORE INTO task_tags (task_id, tag_id) VALUES (?1,?2)",
+                params![id, tid]).ok();
         }
     }
-
     get_task_by_id(&conn, &id).ok_or("Task not found after insert".into())
 }
 
@@ -175,55 +143,30 @@ pub fn create_task(state: State<DbState>, input: CreateTaskInput) -> Result<Task
 pub fn update_task(state: State<DbState>, id: String, input: UpdateTaskInput) -> Result<Task, String> {
     let conn = state.0.lock().unwrap();
     let now = Utc::now().to_rfc3339();
-
-    if let Some(cap) = &input.caption {
-        conn.execute("UPDATE tasks SET caption=?1, updated_at=?2 WHERE id=?3",
-            params![cap, now, id]).ok();
+    macro_rules! set_field {
+        ($field:expr, $val:expr) => {
+            if let Some(v) = $val {
+                conn.execute(&format!("UPDATE tasks SET {}=?1, updated_at=?2 WHERE id=?3", $field),
+                    params![v, now, id]).ok();
+            }
+        };
+        (nullable $field:expr, $val:expr) => {
+            if let Some(v) = $val {
+                let val: Option<&str> = if v.is_empty() { None } else { Some(v) };
+                conn.execute(&format!("UPDATE tasks SET {}=?1, updated_at=?2 WHERE id=?3", $field),
+                    params![val, now, id]).ok();
+            }
+        };
     }
-    if let Some(note) = &input.note {
-        conn.execute("UPDATE tasks SET note=?1, updated_at=?2 WHERE id=?3",
-            params![note, now, id]).ok();
-    }
-    if let Some(v) = input.importance {
-        conn.execute("UPDATE tasks SET importance=?1, updated_at=?2 WHERE id=?3",
-            params![v, now, id]).ok();
-    }
-    if let Some(v) = input.urgency {
-        conn.execute("UPDATE tasks SET urgency=?1, updated_at=?2 WHERE id=?3",
-            params![v, now, id]).ok();
-    }
-    if let Some(v) = input.effort {
-        conn.execute("UPDATE tasks SET effort=?1, updated_at=?2 WHERE id=?3",
-            params![v, now, id]).ok();
-    }
-    if let Some(v) = &input.due_date {
-        let val: Option<&str> = if v.is_empty() { None } else { Some(v) };
-        conn.execute("UPDATE tasks SET due_date=?1, updated_at=?2 WHERE id=?3",
-            params![val, now, id]).ok();
-    }
-    if let Some(v) = &input.reminder_at {
-        conn.execute("UPDATE tasks SET reminder_at=?1, updated_at=?2 WHERE id=?3",
-            params![v, now, id]).ok();
-    }
-    if let Some(v) = &input.recurrence_rule {
-        conn.execute("UPDATE tasks SET recurrence_rule=?1, updated_at=?2 WHERE id=?3",
-            params![v, now, id]).ok();
-    }
-    if let Some(v) = input.starred {
-        conn.execute("UPDATE tasks SET starred=?1, updated_at=?2 WHERE id=?3",
-            params![v, now, id]).ok();
-    }
-    if let Some(v) = &input.color {
-        conn.execute("UPDATE tasks SET color=?1, updated_at=?2 WHERE id=?3",
-            params![v, now, id]).ok();
-    }
-    if let Some(ctx_ids) = &input.context_ids {
-        conn.execute("DELETE FROM task_contexts WHERE task_id=?1", params![id]).ok();
-        for cid in ctx_ids {
-            conn.execute("INSERT OR IGNORE INTO task_contexts (task_id, context_id) VALUES (?1,?2)",
-                params![id, cid]).ok();
-        }
-    }
+    set_field!("caption", input.caption.as_deref());
+    set_field!("note", input.note.as_deref());
+    set_field!(nullable "start_date", input.start_date.as_deref());
+    set_field!(nullable "due_date", input.due_date.as_deref());
+    set_field!(nullable "reminder_at", input.reminder_at.as_deref());
+    set_field!(nullable "recurrence_rule", input.recurrence_rule.as_deref());
+    set_field!(nullable "flag_id", input.flag_id.as_deref());
+    set_field!("starred", input.starred.as_ref().map(|v| *v as i32));
+    set_field!("color", input.color.as_deref());
     if let Some(tag_ids) = &input.tag_ids {
         conn.execute("DELETE FROM task_tags WHERE task_id=?1", params![id]).ok();
         for tid in tag_ids {
@@ -231,7 +174,6 @@ pub fn update_task(state: State<DbState>, id: String, input: UpdateTaskInput) ->
                 params![id, tid]).ok();
         }
     }
-
     get_task_by_id(&conn, &id).ok_or("Task not found".into())
 }
 
@@ -256,10 +198,8 @@ pub fn complete_task(state: State<DbState>, id: String, completed: bool) -> Resu
 pub fn move_task(state: State<DbState>, id: String, new_parent_id: Option<String>, new_position: f64) -> Result<Task, String> {
     let conn = state.0.lock().unwrap();
     let now = Utc::now().to_rfc3339();
-    conn.execute(
-        "UPDATE tasks SET parent_id=?1, position=?2, updated_at=?3 WHERE id=?4",
-        params![new_parent_id, new_position, now, id]
-    ).map_err(|e| e.to_string())?;
+    conn.execute("UPDATE tasks SET parent_id=?1, position=?2, updated_at=?3 WHERE id=?4",
+        params![new_parent_id, new_position, now, id]).map_err(|e| e.to_string())?;
     get_task_by_id(&conn, &id).ok_or("Task not found".into())
 }
 
@@ -272,25 +212,4 @@ pub fn reorder_tasks(state: State<DbState>, ids_and_positions: Vec<(String, f64)
             params![pos, now, id]).ok();
     }
     Ok(())
-}
-
-fn get_task_by_id(conn: &Connection, id: &str) -> Option<Task> {
-    conn.query_row(
-        "SELECT id, parent_id, caption, note, position, created_at, updated_at,
-          completed_at, importance, urgency, effort, due_date, reminder_at,
-          recurrence_rule, starred, color FROM tasks WHERE id=?1",
-        params![id],
-        |r| Ok((
-            r.get::<_,String>(0)?, r.get::<_,Option<String>>(1)?,
-            r.get::<_,String>(2)?, r.get::<_,String>(3)?,
-            r.get::<_,f64>(4)?, r.get::<_,String>(5)?, r.get::<_,String>(6)?,
-            r.get::<_,Option<String>>(7)?, r.get::<_,i32>(8)?,
-            r.get::<_,i32>(9)?, r.get::<_,i32>(10)?,
-            r.get::<_,Option<String>>(11)?, r.get::<_,Option<String>>(12)?,
-            r.get::<_,Option<String>>(13)?, r.get::<_,bool>(14)?,
-            r.get::<_,Option<String>>(15)?
-        ))
-    ).ok().map(|(id, pid, cap, note, pos, ca, ua, compl, imp, urg, eff, due, rem, rec, star, col)| {
-        row_to_task(conn, id, pid, cap, note, pos, ca, ua, compl, imp, urg, eff, due, rem, rec, star, col)
-    })
 }
