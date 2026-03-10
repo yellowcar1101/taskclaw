@@ -217,7 +217,7 @@
 
           <div class="sec-path">
             <span class="sec-path-label">Database file:</span>
-            <code>%LOCALAPPDATA%\taskclaw\tasks.db</code>
+            <code>&lt;app folder&gt;\Data\tasks.db</code>
           </div>
         </div>
       {/if}

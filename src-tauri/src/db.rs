@@ -2,11 +2,14 @@ use rusqlite::{Connection, Result, params};
 use std::path::PathBuf;
 
 pub fn db_path() -> PathBuf {
-    let mut p = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
-    p.push("taskclaw");
-    std::fs::create_dir_all(&p).ok();
-    p.push("tasks.db");
-    p
+    // Store next to the exe in a Data/ subfolder — fully portable, no registry/AppData traces.
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+        .unwrap_or_else(|| PathBuf::from("."));
+    let data_dir = exe_dir.join("Data");
+    std::fs::create_dir_all(&data_dir).ok();
+    data_dir.join("tasks.db")
 }
 
 /// Open the database without a key. Fails if the DB is encrypted.
