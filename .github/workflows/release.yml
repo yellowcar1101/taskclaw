@@ -29,18 +29,27 @@ jobs:
       - name: Install deps
         run: npm ci
 
-      - name: Build (portable)
-        run: npm run tauri build -- --bundles nsis,zip
+      - name: Build
+        run: npm run tauri build -- --bundles nsis
         env:
           TAURI_SIGNING_PRIVATE_KEY: ''
 
-      - name: Upload Windows artifact
+      - name: Package portable ZIP
+        shell: pwsh
+        run: |
+          $exe = "src-tauri/target/release/TaskClaw.exe"
+          $dest = "taskclaw-portable"
+          New-Item -ItemType Directory -Path $dest | Out-Null
+          Copy-Item $exe $dest/
+          Compress-Archive -Path $dest -DestinationPath "taskclaw-portable-windows.zip"
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: taskclaw-windows
           path: |
             src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/zip/*.zip
+            taskclaw-portable-windows.zip
           retention-days: 30
 
       - name: Release
@@ -49,5 +58,5 @@ jobs:
         with:
           files: |
             src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/zip/*.zip
+            taskclaw-portable-windows.zip
           generate_release_notes: true
