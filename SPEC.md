@@ -306,6 +306,197 @@ id, name, show_completed, group_by, sort_by, sort_dir, visible_fields[], positio
 
 ---
 
+### 12 — Sync Improvements
+
+**Goal:** Replace manual upload/download with a proper sync system.
+
+#### Modes
+- **Automated sync**: configurable interval (e.g. every 5 / 15 / 30 / 60 min); runs silently in background
+- **On-demand sync**: button in SyncBar triggers immediate sync
+- **One-sided force overwrite**: user can explicitly push local→remote or pull remote→local, discarding the other side
+
+#### Sync Settings (Preferences → Sync tab)
+- Enable/disable auto-sync
+- Auto-sync interval selector
+- GDrive connection status + reconnect button
+- Last synced timestamp
+
+#### Conflict Resolution
+- Conflict = both local and remote changed since last sync
+- Show a **Conflict Resolution screen** (modal) with:
+  - Side-by-side summary: "Local: N changes since [timestamp]" vs "Remote: N changes since [timestamp]"
+  - Option A: **Keep Local** (push local, overwrite remote)
+  - Option B: **Keep Remote** (pull remote, overwrite local)
+  - Option C: **Merge** (apply remote changes that don't conflict with local — best-effort by `updated_at` timestamps)
+- Force-overwrite buttons available outside of conflict state too (in Sync settings)
+
+---
+
+### 13 — Right-Click Context Menu
+
+**Goal:** Right-click on any task row shows a context menu with actions.
+
+#### Menu structure
+
+```
+New Task
+New Subtask
+New Project         (task with is_project flag)
+New Folder          (task with is_folder flag)
+─────────────────
+Set Due Date  ▶     (submenu — see Date submenu below)
+Skip Occurrence     (for recurring tasks: advance to next occurrence)
+─────────────────
+Cut
+Copy
+Copy as Local Link
+Copy as URL
+Duplicate Task
+Move To…            (opens task-picker modal)
+─────────────────
+Advanced… ▶
+  Complete Task and All Subtasks
+  Uncomplete Task and All Subtasks
+  Sort Subtasks…    (opens sort dialog: by name / due / start / manual)
+  Copy Tasks as Text
+─────────────────
+Delete Task
+─────────────────
+Tag ▶               (submenu: list of tags to toggle; "Clear Tag" at bottom)
+Flag ▶              (submenu: list of flags as coloured icons; "Clear Flag" at bottom)
+Star ▶
+  Star Task
+  Clear Star
+  Toggle Star
+```
+
+#### Date submenu (for Set Due Date / Set Start Date)
+```
+Calendar…           (opens small inline monthly calendar picker)
+Today  Tue Mar 10
+Tomorrow  Wed Mar 11
+In 2 days  Thu Mar 12
+In 3 days  Fri Mar 13
+In 4 days  Sat Mar 14
+In 5 days  Sun Mar 15
+In 6 days  Mon Mar 16
+─────────────────
+Set Equal to Due Date / Set Equal to Start Date
+Next Day
+Next Week
+Previous Day
+Clear
+```
+
+---
+
+### 14 — Single-Click Interaction Model
+
+**Goal:** Each part of the task row has distinct click behaviour.
+
+| Area | Single Click | Double Click |
+|------|-------------|--------------|
+| Caption | Enter inline edit mode | — |
+| Flag dot | If flag set: remove it / If none: apply last-used flag | — |
+| Star | Toggle star | — |
+| Checkbox | Toggle complete | — |
+| Expand arrow | Toggle expand/collapse | — |
+| Rest of row | Select task (highlights row, opens Task Detail) | — |
+
+- Flag and Star clicks do **not** select the task (no side-panel change)
+- "Last used flag" stored in `localStorage`
+
+---
+
+### 15 — Task Detail Panel (full redesign)
+
+**Goal:** Panels are collapsible, draggable to reorder, and individually hideable via Preferences.
+
+#### Fixed top: Notes panel
+- Always visible, always at top (cannot be hidden or reordered)
+- Markdown-aware editor with toolbar: **B** *I* U ~~S~~ | highlight colour | font colour | bullet list | link | image
+- Renders markdown preview on blur, switches to raw edit on focus
+
+#### Collapsible / reorderable sections (below Notes)
+Each section has a header with collapse toggle and drag handle.
+User can disable sections in **Preferences → Task Detail**.
+
+---
+
+##### Section: General
+- [ ] **Folder** — marks task as a folder (visual distinction in tree)
+- [ ] **Hide branch in Views** — excludes task and subtasks from all grouped views
+- [ ] **Complete subtasks in order** — subtasks must be completed sequentially
+- **Tag** text box — freeform tag entry (autocomplete from existing tags)
+
+---
+
+##### Section: Timing & Reminder
+- [ ] **Inherit parent dates** — start/due dates follow parent's dates
+- Quick-set links: **Today** | **Next day** | **Next week**
+- **Start date** field + optional time (via "Use time" checkbox)
+- **Due date** field + optional time (shared "Use time" checkbox)
+- **Reminder** checkbox + date/time field
+- **Recurrence** link → opens Recurrence window (see §16)
+
+---
+
+##### Section: Format
+- [ ] **Use custom formatting**
+- When checked, shows: **Bold** | *Italic* | U̲nderline | ~~Strikethrough~~ | Highlight colour | Font colour | Sidebar colour
+- [ ] **Subtasks inherit custom format**
+
+---
+
+### 16 — Recurrence
+
+**Goal:** Full MLO-compatible recurrence system.
+
+#### Recurrence window (modal)
+
+**Left panel — Recurrence Pattern** (radio):
+- Hourly
+- Daily
+- Weekly → config: "Recur every N week(s) on" + day checkboxes (Mon–Sun)
+- Monthly
+- Yearly
+
+**Alternative**: "Regenerate new task N [unit](s) after each task is completed" (radio)
+
+**Next Occurrence**:
+- Start date/time
+- Due date/time
+- Lead Time (days)
+- [ ] Use time
+- [ ] Lock period
+
+**End Occurrences** (radio):
+- No end date
+- End after N occurrences
+- End by [date]
+
+**Buttons**: OK | Cancel | Remove Recurrence | Advanced Options…
+
+---
+
+#### Recurrence Advanced Options (secondary modal)
+
+**Automatic subtask reset on recurrence** (radio):
+- Disable automatic reset
+- Reset all subtasks to uncompleted *(default)*
+- Reset all subtasks to uncompleted, only if all subtasks are completed
+
+**Automatic recurring behaviour** (radio):
+- Disable automatic recurrence *(default)*
+- Automatically recur when any subtask is completed
+- Automatically recur when all subtasks are completed
+
+- [ ] Do not create a completed copy of this task on recurring *(checked by default)*
+
+**Buttons**: OK | Cancel | Restore Default
+
+---
+
 ## Build & Delivery
 
 - CI: GitHub Actions, `windows-latest`, Rust stable + Node 20
@@ -321,12 +512,17 @@ id, name, show_completed, group_by, sort_by, sort_dir, visible_fields[], positio
 |---|---------|-------------|-----------------|
 | 1 | Theme | — | app.css |
 | 2 | Data model refactor | types.rs, db.rs, commands/ | api.ts, types.ts, stores |
-| 3 | UI redesign | — | all components |
-| 4 | Cross-view selection | stores (outlineScrollToId) | TaskRow, GroupedView |
-| 5 | Date + time fields | — | TaskDetail |
-| 6 | Reminders | — | TaskDetail, ReminderWindow |
-| 7 | Rapid Input | — | RapidInput.svelte |
-| 8 | Alt+Enter parsing | — | TaskRow |
-| 9 | NLP date parser | — | parsing.ts |
-| 10 | Portable DB path | db.rs | Prefs (path display) |
-| 11 | Encryption | Cargo.toml, db.rs, commands/ | LockScreen, Prefs |
+| 3 | UI redesign (layout, tabs, panels) | — | all components |
+| 4 | Single-click interaction model | — | TaskRow |
+| 5 | Right-click context menu | commands (move, sort, duplicate) | ContextMenu.svelte |
+| 6 | Cross-view selection sync | stores | TaskRow, GroupedView |
+| 7 | Task Detail panel (full redesign) | — | TaskDetail + subsections |
+| 8 | Date + time fields | — | TaskDetail |
+| 9 | Reminders | — | TaskDetail, ReminderWindow |
+| 10 | Recurrence | types.rs, db.rs, commands/ | RecurrenceModal.svelte |
+| 11 | Rapid Input | — | RapidInput.svelte |
+| 12 | Alt+Enter parsing | — | TaskRow |
+| 13 | NLP date parser | — | parsing.ts |
+| 14 | Sync improvements | — | SyncBar, ConflictModal, Prefs |
+| 15 | Portable DB path | db.rs | Prefs (path display) |
+| 16 | Encryption | Cargo.toml, db.rs, commands/ | LockScreen, Prefs |
