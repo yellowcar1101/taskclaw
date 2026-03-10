@@ -26,6 +26,11 @@
   --green:            #6ABF69;
 
   color-scheme: dark;
+
+  /* Appearance — overridden by Prefs JS */
+  --app-font:      system-ui, sans-serif;
+  --app-font-size: 12px;
+  --row-height:    28px;
 }
 
 /* ── Reset ──────────────────────────────────────────────────────────────── */
@@ -36,7 +41,8 @@ html, body {
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
-  font-family: system-ui, sans-serif;
+  font-family: var(--app-font);
+  font-size: var(--app-font-size);
   font-size: 12px;
   line-height: 1.4;
   -webkit-font-smoothing: antialiased;

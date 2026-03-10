@@ -4,7 +4,7 @@
   import {
     contextMenu, allTasks, flags, tags, taskById,
     createTask, updateTask, deleteTask, completeTask,
-    detailTaskId, navigateToOutline
+    detailTaskId, navigateToOutline, expanded, editingId
   } from '../stores/tasks';
   import { api } from '../api';
   import type { Task } from '../types';
@@ -54,19 +54,33 @@
 
   async function newTask() {
     if (!task) return;
-    act(() => createTask({ parent_id: task!.parent_id, caption: 'New task' }));
+    const parentId = task.parent_id;
+    close();
+    const t = await createTask({ parent_id: parentId, caption: 'New task' });
+    editingId.set(t.id);
   }
   async function newSubtask() {
     if (!task) return;
-    act(() => createTask({ parent_id: task!.id, caption: 'New task' }));
+    const taskId = task.id;
+    close();
+    const t = await createTask({ parent_id: taskId, caption: 'New task' });
+    // Expand the parent so the new subtask is visible
+    expanded.update(s => { const n = new Set(s); n.add(taskId); return n; });
+    editingId.set(t.id);
   }
   async function newProject() {
     if (!task) return;
-    act(() => createTask({ parent_id: task!.parent_id, caption: 'New project', is_project: true }));
+    const parentId = task.parent_id;
+    close();
+    const t = await createTask({ parent_id: parentId, caption: 'New project', is_project: true });
+    editingId.set(t.id);
   }
   async function newFolder() {
     if (!task) return;
-    act(() => createTask({ parent_id: task!.parent_id, caption: 'New folder', is_folder: true }));
+    const parentId = task.parent_id;
+    close();
+    const t = await createTask({ parent_id: parentId, caption: 'New folder', is_folder: true });
+    editingId.set(t.id);
   }
 
   async function doComplete() {

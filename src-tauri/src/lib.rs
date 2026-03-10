@@ -5,6 +5,7 @@ mod commands;
 use commands::tasks::DbState;
 use commands::tasks::*;
 use commands::flags::*;
+use commands::sync::*;
 use std::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -53,6 +54,14 @@ pub fn run() {
             get_setting,
             set_setting,
             get_all_settings,
+            // gdrive sync
+            gdrive_auth_url,
+            gdrive_wait_auth,
+            gdrive_status,
+            gdrive_disconnect,
+            gdrive_sync_push,
+            gdrive_sync_pull,
+            gdrive_last_sync,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,10 +1,114 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { showPrefs, flags, tags } from '../stores/tasks';
   import { api } from '../api';
   import type { Flag, Tag } from '../types';
 
-  let activeTab: 'flags' | 'tags' | 'app' = 'flags';
+  let activeTab: 'flags' | 'tags' | 'app' | 'sync' = 'flags';
   let error = '';
+
+  // ── App appearance settings ──────────────────────────────────────────────────
+  const FONT_KEY    = 'app_font';
+  const SIZE_KEY    = 'app_font_size';
+  const COMPACT_KEY = 'app_compact';
+
+  let appFont = localStorage.getItem(FONT_KEY) ?? 'system';
+  let appFontSize = localStorage.getItem(SIZE_KEY) ?? '12';
+  let appCompact = localStorage.getItem(COMPACT_KEY) === 'true';
+
+  function applyAppearance() {
+    const root = document.documentElement;
+    const fontMap: Record<string, string> = {
+      system: 'system-ui, sans-serif',
+      mono:   "'Cascadia Code', 'Fira Code', monospace",
+      inter:  'Inter, system-ui, sans-serif',
+    };
+    root.style.setProperty('--app-font', fontMap[appFont] ?? fontMap.system);
+    root.style.setProperty('--app-font-size', appFontSize + 'px');
+    root.style.setProperty('--row-height', appCompact ? '22px' : '28px');
+    localStorage.setItem(FONT_KEY, appFont);
+    localStorage.setItem(SIZE_KEY, appFontSize);
+    localStorage.setItem(COMPACT_KEY, String(appCompact));
+  }
+
+  // Apply on mount (load saved)
+  onMount(() => {
+    applyAppearance();
+  });
+
+  $: { appFont; appFontSize; appCompact; applyAppearance(); }
+
+  // ── GDrive Sync ──────────────────────────────────────────────────────────────
+  let gdriveConnected = false;
+  let gdriveLastSync: string | null = null;
+  let syncStatus = '';
+  let syncing = false;
+  let connecting = false;
+
+  async function loadSyncStatus() {
+    try {
+      gdriveConnected = await api.gdriveStatus();
+      gdriveLastSync = await api.gdriveLastSync();
+    } catch {}
+  }
+
+  onMount(loadSyncStatus);
+
+  async function connectGDrive() {
+    connecting = true;
+    syncStatus = '';
+    try {
+      const { url, port } = await api.gdriveAuthUrl();
+      // Open browser
+      const { openUrl } = await import('@tauri-apps/plugin-opener');
+      await openUrl(url);
+      syncStatus = 'Waiting for Google authorization…';
+      // Wait for redirect (blocking call on Rust side)
+      const msg = await api.gdriveWaitAuth(port);
+      syncStatus = msg;
+      await loadSyncStatus();
+    } catch (e: any) {
+      syncStatus = 'Error: ' + (e?.message ?? String(e));
+    } finally {
+      connecting = false;
+    }
+  }
+
+  async function disconnect() {
+    await api.gdriveDisconnect();
+    gdriveConnected = false;
+    gdriveLastSync = null;
+    syncStatus = 'Disconnected.';
+  }
+
+  async function push() {
+    syncing = true;
+    syncStatus = '';
+    try {
+      syncStatus = await api.gdriveSyncPush();
+      gdriveLastSync = await api.gdriveLastSync();
+    } catch (e: any) {
+      syncStatus = 'Error: ' + (e?.message ?? String(e));
+    } finally {
+      syncing = false;
+    }
+  }
+
+  async function pull() {
+    if (!confirm('This will REPLACE all local data with the cloud version. Continue?')) return;
+    syncing = true;
+    syncStatus = '';
+    try {
+      syncStatus = await api.gdriveSyncPull();
+      // Reload all data
+      const { loadAll } = await import('../stores/tasks');
+      await loadAll();
+    } catch (e: any) {
+      syncStatus = 'Error: ' + (e?.message ?? String(e));
+    } finally {
+      syncing = false;
+    }
+  }
 
   // ── Flags ────────────────────────────────────────────────────────────────────
   let editingFlagId: string | null = null;
@@ -108,7 +212,8 @@
     <div class="tabs">
       <button class="tab" class:active={activeTab === 'flags'} on:click={() => activeTab = 'flags'}>Flags</button>
       <button class="tab" class:active={activeTab === 'tags'}  on:click={() => activeTab = 'tags'}>Tags</button>
-      <button class="tab" class:active={activeTab === 'app'}   on:click={() => activeTab = 'app'}>App</button>
+      <button class="tab" class:active={activeTab === 'app'}   on:click={() => activeTab = 'app'}>Appearance</button>
+      <button class="tab" class:active={activeTab === 'sync'}  on:click={() => activeTab = 'sync'}>Sync</button>
     </div>
 
     {#if error}
@@ -186,25 +291,88 @@
         {/if}
       {/if}
 
-      <!-- APP TAB -->
+      <!-- APPEARANCE TAB -->
       {#if activeTab === 'app'}
-        <div class="section-hint">App settings.</div>
+        <div class="section-hint">Appearance settings apply immediately.</div>
+
         <div class="info-row">
+          <span class="info-label">Font</span>
+          <select class="info-select" bind:value={appFont}>
+            <option value="system">System UI (default)</option>
+            <option value="inter">Inter</option>
+            <option value="mono">Monospace (Cascadia Code)</option>
+          </select>
+        </div>
+
+        <div class="info-row">
+          <span class="info-label">Font size</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input type="range" min="10" max="16" step="1" bind:value={appFontSize} style="width:100px" />
+            <span class="info-value">{appFontSize}px</span>
+          </div>
+        </div>
+
+        <div class="info-row">
+          <span class="info-label">Row height</span>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer">
+            <input type="checkbox" bind:checked={appCompact} style="accent-color:var(--accent)" />
+            Compact mode (22px rows)
+          </label>
+        </div>
+
+        <div class="info-row" style="margin-top:16px">
           <span class="info-label">Version</span>
           <span class="info-value">TaskClaw 1.0</span>
         </div>
         <div class="info-row">
-          <span class="info-label">Data location</span>
+          <span class="info-label">Data</span>
           <span class="info-value dim">./Data/tasks.db (portable)</span>
         </div>
-        <div class="info-row">
-          <span class="info-label">GDrive Sync</span>
-          <span class="info-value dim">Coming soon</span>
+      {/if}
+
+      <!-- SYNC TAB -->
+      {#if activeTab === 'sync'}
+        <div class="section-hint">
+          Sync your tasks to Google Drive. The sync file (<code>taskclaw-sync.json</code>) is stored
+          in your Drive root. Last-write-wins — push overwrites cloud, pull overwrites local.
         </div>
-        <div class="info-row">
-          <span class="info-label">Encryption</span>
-          <span class="info-value dim">Coming soon</span>
-        </div>
+
+        {#if gdriveConnected}
+          <div class="sync-status connected">
+            <span class="sync-dot connected"></span>
+            Connected to Google Drive
+          </div>
+          {#if gdriveLastSync}
+            <div class="info-row">
+              <span class="info-label">Last sync</span>
+              <span class="info-value dim">{new Date(gdriveLastSync).toLocaleString()}</span>
+            </div>
+          {/if}
+          <div class="sync-actions">
+            <button class="sync-btn push" on:click={push} disabled={syncing}>
+              {syncing ? '…' : '↑ Push to Cloud'}
+            </button>
+            <button class="sync-btn pull" on:click={pull} disabled={syncing}>
+              {syncing ? '…' : '↓ Pull from Cloud'}
+            </button>
+            <button class="sync-btn danger" on:click={disconnect}>Disconnect</button>
+          </div>
+        {:else}
+          <div class="sync-status">
+            <span class="sync-dot"></span>
+            Not connected
+          </div>
+          <button class="sync-btn connect" on:click={connectGDrive} disabled={connecting}>
+            {connecting ? 'Connecting…' : '🔗 Connect to Google Drive'}
+          </button>
+          <div class="section-hint" style="margin-top:8px">
+            Your browser will open to authorize TaskClaw. After approval, return here.
+          </div>
+        {/if}
+
+        {#if syncStatus}
+          <div class="sync-msg" class:err={syncStatus.startsWith('Error')}>{syncStatus}</div>
+        {/if}
       {/if}
 
     </div>
@@ -366,7 +534,65 @@
     border-bottom: 1px solid var(--border);
     font-size: 12px;
   }
-  .info-label { flex: 1; color: var(--text-dim); }
+  .info-label { flex: 1; color: var(--text-dim); min-width: 100px; }
   .info-value { color: var(--text); }
   .info-value.dim { color: var(--text-dim); font-style: italic; }
+  .info-select {
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 3px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    outline: none;
+    flex: 1;
+  }
+
+  .sync-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-dim);
+    padding: 8px 4px;
+    margin-bottom: 8px;
+  }
+  .sync-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--border);
+    flex-shrink: 0;
+  }
+  .sync-dot.connected { background: var(--green); }
+  .sync-status.connected { color: var(--green); }
+
+  .sync-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 12px 0;
+  }
+  .sync-btn {
+    padding: 6px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    border: 1px solid var(--border);
+    background: var(--hover-btn);
+    color: var(--text);
+  }
+  .sync-btn:hover:not(:disabled) { background: var(--hover); }
+  .sync-btn:disabled { opacity: 0.5; cursor: default; }
+  .sync-btn.push { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .sync-btn.pull { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+  .sync-btn.connect { background: var(--accent); border-color: var(--accent); color: #fff; font-size: 13px; padding: 8px 18px; }
+  .sync-btn.danger { color: var(--red); border-color: var(--red); }
+  .sync-msg {
+    font-size: 11px;
+    color: var(--green);
+    padding: 6px 4px;
+    border-radius: 3px;
+    background: #6ABF6922;
+  }
+  .sync-msg.err { color: var(--red); background: #E05C5C22; }
 </style>

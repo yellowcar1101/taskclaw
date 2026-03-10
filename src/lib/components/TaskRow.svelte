@@ -291,7 +291,7 @@
     display: flex;
     align-items: center;
     gap: 4px;
-    height: 28px;
+    height: var(--row-height, 28px);
     border-radius: 3px;
     cursor: default;
     user-select: none;

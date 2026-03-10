@@ -193,27 +193,34 @@ export function parseDateExpr(expr: string): string | null {
 // ── Reminder expression parser ────────────────────────────────────────────────
 
 function parseReminderExpr(expr: string, dueDate: string | null): string | null {
-  // "me [date expr]" — absolute
-  if (expr.startsWith('me')) {
-    const rest = expr.slice(2).trim();
+  // "me [date expr]" or "me at [date]" — absolute
+  if (/^me\b/i.test(expr)) {
+    const rest = expr.replace(/^me\s*(at\s*)?/i, '').trim();
     if (!rest) return dueDate ?? null;
     return parseDateExpr(rest);
   }
 
-  // "N min/hour before/in advance"
+  // "at [time/date]" — absolute shorthand
+  if (/^at\s+/i.test(expr)) {
+    return parseDateExpr(expr.replace(/^at\s+/i, '').trim());
+  }
+
+  // "N min/hour/day before/in advance" — relative to due date
+  // If no due date, calculate relative to now instead
   const offsetMatch = expr.match(/(\d+)\s*(min(?:ute)?s?|h(?:our)?s?|d(?:ay)?s?)\s*(?:before|in\s+advance)?/i);
-  if (offsetMatch && dueDate) {
+  if (offsetMatch) {
     const n = parseInt(offsetMatch[1]);
     const unit = offsetMatch[2].toLowerCase();
-    const due = parseDateToMs(dueDate);
-    if (due) {
-      let ms = due;
-      if (unit.startsWith('min')) ms -= n * 60000;
-      else if (unit.startsWith('h')) ms -= n * 3600000;
-      else if (unit.startsWith('d')) ms -= n * 86400000;
-      const d = new Date(ms);
-      return `${fmtDate(d)}T${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-    }
+    // Prefer due date as anchor; fall back to now
+    const anchor = dueDate
+      ? (parseDateToMs(dueDate + (dueDate.length === 10 ? 'T09:00' : '')) ?? Date.now())
+      : Date.now();
+    let ms = anchor;
+    if (unit.startsWith('min')) ms -= n * 60000;
+    else if (unit.startsWith('h')) ms -= n * 3600000;
+    else if (unit.startsWith('d')) ms -= n * 86400000;
+    const d = new Date(ms);
+    return `${fmtDate(d)}T${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
   }
 
   return parseDateExpr(expr);

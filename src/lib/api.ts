@@ -45,6 +45,28 @@ export const api = {
   skipOccurrence: (id: string): Promise<Task> =>
     invoke('skip_occurrence', { id }),
 
+  // ── GDrive Sync ────────────────────────────────────────────────────────────
+  gdriveAuthUrl: (): Promise<{ url: string; port: number }> =>
+    invoke('gdrive_auth_url'),
+
+  gdriveWaitAuth: (port: number): Promise<string> =>
+    invoke('gdrive_wait_auth', { port }),
+
+  gdriveStatus: (): Promise<boolean> =>
+    invoke('gdrive_status'),
+
+  gdriveDisconnect: (): Promise<void> =>
+    invoke('gdrive_disconnect'),
+
+  gdriveSyncPush: (): Promise<string> =>
+    invoke('gdrive_sync_push'),
+
+  gdriveSyncPull: (): Promise<string> =>
+    invoke('gdrive_sync_pull'),
+
+  gdriveLastSync: (): Promise<string | null> =>
+    invoke('gdrive_last_sync'),
+
   // ── Flags ──────────────────────────────────────────────────────────────
   getFlags: (): Promise<Flag[]> =>
     invoke('get_flags'),

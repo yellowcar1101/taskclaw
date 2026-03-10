@@ -13,13 +13,14 @@ export const expanded          = writable<Set<string>>(new Set());
 export const selected          = writable<Set<string>>(new Set());
 export const editingId         = writable<string | null>(null);
 export const detailTaskId      = writable<string | null>(null);
-export const activeTabId       = writable<string>('outline');
+export const activeTabId       = writable<string>('outline'); // 'outline' | view.id
 export const showPrefs         = writable<boolean>(false);
 export const showRapidInput    = writable<boolean>(false);
 export const outlineScrollToId = writable<string | null>(null);
 export const lastUsedFlagId    = writable<string | null>(null);
 export const contextMenu       = writable<{ x: number; y: number; taskId: string } | null>(null);
 export const showViewsPanel    = writable<boolean>(false);
+export const editingViewId     = writable<string | null>(null); // view settings dialog
 export const searchQuery       = writable<string>('');
 export const sortField         = writable<SortField>('position');
 export const sortDir           = writable<SortDir>('asc');
@@ -39,7 +40,7 @@ export const childrenOf = derived(allTasks, ts => {
   return map;
 });
 
-function sortTasks(tasks: Task[], field: SortField, dir: SortDir): Task[] {
+export function sortTasks(tasks: Task[], field: SortField, dir: SortDir): Task[] {
   return [...tasks].sort((a, b) => {
     let av: any, bv: any;
     switch (field) {
@@ -58,7 +59,13 @@ export const rootTasks = derived(
   [childrenOf, sortField, sortDir, filterFlagId, searchQuery],
   ([$children, $sf, $sd, $flag, $q]) => {
     let tasks = $children.get(null) ?? [];
-    if ($flag) tasks = tasks.filter(t => t.flag_id === $flag);
+    if ($flag) {
+      if ($flag === '__starred__') tasks = tasks.filter(t => t.starred);
+      else if ($flag === '__today__') {
+        const today = new Date().toISOString().slice(0, 10);
+        tasks = tasks.filter(t => t.due_date === today);
+      } else tasks = tasks.filter(t => t.flag_id === $flag);
+    }
     if ($q) {
       const ql = $q.toLowerCase();
       tasks = tasks.filter(t => t.caption.toLowerCase().includes(ql));
@@ -85,34 +92,61 @@ export async function loadAll() {
 
 export async function createTask(input: Parameters<typeof api.createTask>[0]) {
   const task = await api.createTask(input);
-  allTasks.update(ts => [...ts, task]);
+  allTasks.update(ts => {
+    const updated = [...ts, task];
+    // Update parent's has_children flag
+    if (task.parent_id) {
+      return updated.map(t => t.id === task.parent_id ? { ...t, has_children: true } : t);
+    }
+    return updated;
+  });
   return task;
 }
 
 export async function updateTask(id: string, input: Parameters<typeof api.updateTask>[1]) {
   const task = await api.updateTask(id, input);
   allTasks.update(ts => ts.map(t => t.id === id ? task : t));
-  // refresh detail panel if this task is shown
   return task;
 }
 
 export async function deleteTask(id: string) {
-  await api.deleteTask(id);
   const all = get(allTasks);
+  const deletedTask = all.find(t => t.id === id);
+  const parentId = deletedTask?.parent_id ?? null;
+
+  await api.deleteTask(id);
+
   const toRemove = new Set<string>();
   function collect(tid: string) {
     toRemove.add(tid);
     all.filter(t => t.parent_id === tid).forEach(c => collect(c.id));
   }
   collect(id);
-  allTasks.update(ts => ts.filter(t => !toRemove.has(t.id)));
-  detailTaskId.update(id => toRemove.has(id ?? '') ? null : id);
+
+  allTasks.update(ts => {
+    const filtered = ts.filter(t => !toRemove.has(t.id));
+    // Update parent's has_children if this was its only child
+    if (parentId) {
+      const parentStillHasChildren = filtered.some(t => t.parent_id === parentId);
+      return filtered.map(t => t.id === parentId ? { ...t, has_children: parentStillHasChildren } : t);
+    }
+    return filtered;
+  });
+  detailTaskId.update(did => toRemove.has(did ?? '') ? null : did);
 }
 
 export async function completeTask(id: string, completed: boolean) {
   const task = await api.completeTask(id, completed);
+  const parentId = get(taskById).get(id)?.parent_id ?? null;
   if (completed) {
-    allTasks.update(ts => ts.filter(t => t.id !== id));
+    allTasks.update(ts => {
+      const filtered = ts.filter(t => t.id !== id);
+      if (parentId) {
+        const parentStillHasChildren = filtered.some(t => t.parent_id === parentId);
+        return filtered.map(t => t.id === parentId ? { ...t, has_children: parentStillHasChildren } : t);
+      }
+      return filtered;
+    });
     detailTaskId.update(did => did === id ? null : did);
   } else {
     allTasks.update(ts => ts.map(t => t.id === id ? task : t));
@@ -120,8 +154,21 @@ export async function completeTask(id: string, completed: boolean) {
 }
 
 export async function moveTask(id: string, newParentId: string | null, newPosition: number) {
+  const oldParentId = get(taskById).get(id)?.parent_id ?? null;
   const task = await api.moveTask(id, newParentId, newPosition);
-  allTasks.update(ts => ts.map(t => t.id === id ? task : t));
+  allTasks.update(ts => {
+    const mapped = ts.map(t => t.id === id ? task : t);
+    // Old parent might have lost its last child
+    if (oldParentId) {
+      const stillHas = mapped.some(t => t.parent_id === oldParentId);
+      return mapped.map(t => t.id === oldParentId ? { ...t, has_children: stillHas } : t);
+    }
+    // New parent gained a child
+    if (newParentId) {
+      return mapped.map(t => t.id === newParentId ? { ...t, has_children: true } : t);
+    }
+    return mapped;
+  });
 }
 
 export async function reorderTasks(idsAndPositions: [string, number][]) {
@@ -180,8 +227,6 @@ export function toggleSort(field: SortField) {
 
 export function navigateToOutline(id: string) {
   activeTabId.set('outline');
-  // expand ancestors
-  const all = get(allTasks);
   const map = get(taskById);
   let t = map.get(id);
   while (t?.parent_id) {
