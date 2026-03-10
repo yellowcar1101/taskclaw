@@ -4,6 +4,7 @@
   import Sidebar from '$lib/components/Sidebar.svelte';
   import TaskTree from '$lib/components/TaskTree.svelte';
   import { loadAll } from '$lib/stores/tasks';
+  import SyncBar from '$lib/components/SyncBar.svelte';
 
   let ready = false;
 
@@ -17,6 +18,7 @@
   <header class="titlebar">
     <span class="app-name">TaskClaw</span>
     <span class="spacer"></span>
+    <SyncBar />
   </header>
 
   <div class="main-area">

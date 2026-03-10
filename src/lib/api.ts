@@ -37,4 +37,17 @@ export const api = {
 
   addEmailLink: (taskId: string, linkType: string, linkData: string, subject?: string): Promise<string> =>
     invoke('add_email_link', { taskId, linkType, linkData, subject }),
+
+  // GDrive sync
+  gdriveAuthStatus: (): Promise<boolean> =>
+    invoke('gdrive_auth_status'),
+
+  gdriveConnect: (): Promise<{ success: boolean; message: string; synced_at?: string }> =>
+    invoke('gdrive_connect'),
+
+  gdriveUpload: (): Promise<{ success: boolean; message: string; synced_at?: string }> =>
+    invoke('gdrive_upload'),
+
+  gdriveDownload: (): Promise<{ success: boolean; message: string; synced_at?: string }> =>
+    invoke('gdrive_download'),
 };
