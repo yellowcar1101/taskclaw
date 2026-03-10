@@ -2,7 +2,6 @@ use rusqlite::{Connection, Result, params};
 use std::path::PathBuf;
 
 pub fn db_path() -> PathBuf {
-    // Store next to the exe in a Data/ subfolder — fully portable, no registry/AppData traces.
     let exe_dir = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.to_path_buf()))
@@ -12,40 +11,20 @@ pub fn db_path() -> PathBuf {
     data_dir.join("tasks.db")
 }
 
-/// Open the database without a key. Fails if the DB is encrypted.
 pub fn open() -> Result<Connection> {
     let conn = Connection::open(db_path())?;
-    // Verify we can read — this fails for an encrypted DB
-    conn.query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0))?;
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
     migrate(&conn)?;
     Ok(conn)
 }
 
-/// Open an encrypted database with the given password.
-pub fn open_with_key(key: &str) -> Result<Connection> {
-    let conn = Connection::open(db_path())?;
-    let escaped = key.replace('\'', "''");
-    conn.execute_batch(&format!("PRAGMA key='{}';", escaped))?;
-    // Verify key is correct — fails with "file is not a database" if wrong
-    conn.query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0))?;
-    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
-    migrate(&conn)?;
-    Ok(conn)
+// Stubs — will be replaced with real SQLCipher once base app is confirmed working
+pub fn open_with_key(_key: &str) -> Result<Connection> {
+    open()
 }
 
-/// Returns true if the DB file exists and is SQLCipher-encrypted.
 pub fn is_db_encrypted() -> bool {
-    let path = db_path();
-    if !path.exists() {
-        return false;
-    }
-    let conn = match Connection::open(&path) {
-        Ok(c) => c,
-        Err(_) => return false,
-    };
-    conn.query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0))
-        .is_err()
+    false
 }
 
 pub fn migrate(conn: &Connection) -> Result<()> {
@@ -122,7 +101,6 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_tasks_flag ON tasks(flag_id);
     ")?;
 
-    // Add columns to existing installs (idempotent — fails silently if already exists)
     for sql in [
         "ALTER TABLE tasks ADD COLUMN start_date TEXT",
         "ALTER TABLE tasks ADD COLUMN flag_id TEXT REFERENCES flags(id) ON DELETE SET NULL",
@@ -137,7 +115,6 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         conn.execute(sql, []).ok();
     }
 
-    // Seed default flags if empty
     let flag_count: i64 = conn.query_row("SELECT COUNT(*) FROM flags", [], |r| r.get(0)).unwrap_or(0);
     if flag_count == 0 {
         let defaults = [
