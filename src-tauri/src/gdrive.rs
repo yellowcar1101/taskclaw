@@ -249,7 +249,7 @@ pub async fn download_db(db_path: &PathBuf) -> Result<bool, String> {
                 if let Ok(local_meta) = std::fs::metadata(db_path) {
                     if let Ok(local_modified) = local_meta.modified() {
                         let local_ts = chrono::DateTime::<chrono::Utc>::from(local_modified);
-                        if local_ts > remote_ts.into() {
+                        if local_ts > remote_ts.with_timezone(&chrono::Utc) {
                             return Ok(false); // local is newer, don't overwrite
                         }
                     }
