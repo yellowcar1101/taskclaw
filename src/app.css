@@ -1,25 +1,29 @@
 /* ── Design tokens — dark theme ─────────────────────────────────────────── */
 :root {
-  --bg:             #141414;
-  --surface:        #1c1c1c;
-  --surface-elevated:#222222;
-  --border:         #2e2e2e;
-  --hover:          #2a2a2a;
-  --hover-btn:      #252525;
-  --selected:       #1a2a3a;
-  --input-bg:       #1a1a1a;
+  /* Backgrounds */
+  --bg:               #1a1a1a;
+  --surface:          #222222;
+  --surface-elevated: #2a2a2a;
+  --input-bg:         #272727;
 
-  --text:           #d4d4d4;
-  --text-dim:       #6b6b6b;
+  /* Borders */
+  --border:           #3c3c3c;
 
-  --accent:         #4A9EFF;
-  --accent-bright:  #6db3ff;
-  --accent-dim:     #2a5a8a;
+  /* Text */
+  --text:             #e0e0e0;
+  --text-dim:         #888888;
 
-  --red:            #e05c5c;
-  --green:          #6abf69;
-  --gold:           #d4a843;
-  --orange:         #d4874a;
+  /* Interactive */
+  --accent:           #4A9EFF;
+  --accent-dim:       #4A9EFF33;
+  --hover:            #ffffff0f;
+  --hover-btn:        #2e2e2e;
+  --selected:         #4A9EFF1a;
+
+  /* Semantic colours */
+  --red:              #E05C5C;
+  --amber:            #D4A843;
+  --green:            #6ABF69;
 
   color-scheme: dark;
 }
@@ -32,8 +36,9 @@ html, body {
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
-  font-family: 'Segoe UI', system-ui, sans-serif;
-  font-size: 13px;
+  font-family: system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -46,4 +51,4 @@ button { font-family: inherit; }
 input, select { font-family: inherit; }
 
 /* ── Selection ──────────────────────────────────────────────────────────── */
-::selection { background: var(--accent-dim); color: var(--text); }
+::selection { background: #4A9EFF55; color: var(--text); }

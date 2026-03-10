@@ -104,7 +104,7 @@
   }
   .nav-item:hover { background: var(--hover); color: var(--text); }
   .nav-item.active { background: var(--selected); color: var(--accent); }
-  .nav-item.starred { color: var(--gold); }
+  .nav-item.starred { color: var(--amber); }
 
   .ctx-dot {
     width: 8px;

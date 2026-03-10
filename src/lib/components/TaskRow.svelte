@@ -335,7 +335,7 @@
     flex: 1;
     min-width: 0;
   }
-  .caption-text.starred::before { content: '★ '; color: var(--gold); }
+  .caption-text.starred::before { content: '★ '; color: var(--amber); }
 
   .caption-input {
     font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
@@ -377,8 +377,8 @@
     font-family: sans-serif;
   }
   .col-due.overdue { color: var(--red); font-weight: 600; }
-  .col-due.today   { color: var(--gold); font-weight: 600; }
-  .col-due.soon    { color: var(--orange); }
+  .col-due.today   { color: var(--amber); font-weight: 600; }
+  .col-due.soon    { color: var(--amber); }
 
   .col-score {
     width: 64px;

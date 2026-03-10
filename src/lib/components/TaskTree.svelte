@@ -102,7 +102,7 @@
     color: #fff;
     border-color: var(--accent);
   }
-  .tb-btn.primary:hover { background: var(--accent-bright); }
+  .tb-btn.primary:hover { background: var(--accent); }
 
   .search-input {
     background: var(--input-bg);
