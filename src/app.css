@@ -1,0 +1,49 @@
+/* ── Design tokens — dark theme ─────────────────────────────────────────── */
+:root {
+  --bg:             #141414;
+  --surface:        #1c1c1c;
+  --surface-elevated:#222222;
+  --border:         #2e2e2e;
+  --hover:          #2a2a2a;
+  --hover-btn:      #252525;
+  --selected:       #1a2a3a;
+  --input-bg:       #1a1a1a;
+
+  --text:           #d4d4d4;
+  --text-dim:       #6b6b6b;
+
+  --accent:         #4A9EFF;
+  --accent-bright:  #6db3ff;
+  --accent-dim:     #2a5a8a;
+
+  --red:            #e05c5c;
+  --green:          #6abf69;
+  --gold:           #d4a843;
+  --orange:         #d4874a;
+
+  color-scheme: dark;
+}
+
+/* ── Reset ──────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+button { font-family: inherit; }
+input, select { font-family: inherit; }
+
+/* ── Selection ──────────────────────────────────────────────────────────── */
+::selection { background: var(--accent-dim); color: var(--text); }
