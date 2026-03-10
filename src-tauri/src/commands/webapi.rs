@@ -263,23 +263,23 @@ fn query_json(conn: &rusqlite::Connection, sql: &str) -> serde_json::Value {
         Err(_) => return serde_json::json!([]),
     };
     let cols: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
-    let rows: Vec<serde_json::Value> = stmt
-        .query_map([], |row| {
-            let mut obj = serde_json::Map::new();
-            for (i, col) in cols.iter().enumerate() {
-                let val: serde_json::Value = match row.get_ref(i).unwrap_or(rusqlite::types::ValueRef::Null) {
-                    rusqlite::types::ValueRef::Null       => serde_json::Value::Null,
-                    rusqlite::types::ValueRef::Integer(n) => serde_json::Value::Number(n.into()),
-                    rusqlite::types::ValueRef::Real(f)    => serde_json::json!(f),
-                    rusqlite::types::ValueRef::Text(s)    => serde_json::Value::String(String::from_utf8_lossy(s).into()),
-                    rusqlite::types::ValueRef::Blob(_)    => serde_json::Value::Null,
-                };
-                obj.insert(col.clone(), val);
-            }
-            Ok(serde_json::Value::Object(obj))
-        })
-        .unwrap_or_else(|_| Box::new(std::iter::empty()))
-        .filter_map(|r| r.ok())
-        .collect();
+    let mapped = stmt.query_map([], |row| {
+        let mut obj = serde_json::Map::new();
+        for (i, col) in cols.iter().enumerate() {
+            let val: serde_json::Value = match row.get_ref(i).unwrap_or(rusqlite::types::ValueRef::Null) {
+                rusqlite::types::ValueRef::Null       => serde_json::Value::Null,
+                rusqlite::types::ValueRef::Integer(n) => serde_json::Value::Number(n.into()),
+                rusqlite::types::ValueRef::Real(f)    => serde_json::json!(f),
+                rusqlite::types::ValueRef::Text(s)    => serde_json::Value::String(String::from_utf8_lossy(s).into()),
+                rusqlite::types::ValueRef::Blob(_)    => serde_json::Value::Null,
+            };
+            obj.insert(col.clone(), val);
+        }
+        Ok(serde_json::Value::Object(obj))
+    });
+    let rows: Vec<serde_json::Value> = match mapped {
+        Ok(iter) => iter.filter_map(|r| r.ok()).collect(),
+        Err(_) => vec![],
+    };
     serde_json::Value::Array(rows)
 }
