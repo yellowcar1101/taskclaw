@@ -17,8 +17,82 @@
 
   let ready = false;
 
+  // ── File menu ──────────────────────────────────────────────────────────────
+  let fileMenuOpen = false;
+  let currentFile = '';
+  let fileError = '';
+
+  async function loadCurrentFile() {
+    const { invoke } = await import('@tauri-apps/api/core');
+    currentFile = await invoke<string>('file_current_path').catch(() => '');
+  }
+
+  function currentFileName(path: string): string {
+    if (!path) return 'tasks.db';
+    return path.split(/[\\/]/).pop() ?? path;
+  }
+
+  async function fileNew() {
+    fileMenuOpen = false;
+    fileError = '';
+    try {
+      const { save } = await import('@tauri-apps/plugin-dialog');
+      const { invoke } = await import('@tauri-apps/api/core');
+      const path = await save({
+        title: 'New TaskClaw database',
+        filters: [{ name: 'TaskClaw DB', extensions: ['db'] }],
+        defaultPath: 'tasks.db',
+      });
+      if (!path) return;
+      await invoke('file_new', { newPath: path });
+      currentFile = path;
+      await loadAll();
+    } catch (e: any) {
+      fileError = e?.message ?? String(e);
+    }
+  }
+
+  async function fileOpen() {
+    fileMenuOpen = false;
+    fileError = '';
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const { invoke } = await import('@tauri-apps/api/core');
+      const path = await open({
+        title: 'Open TaskClaw database',
+        filters: [{ name: 'TaskClaw DB', extensions: ['db'] }],
+        multiple: false,
+      });
+      if (!path) return;
+      await invoke('file_open', { newPath: path as string });
+      currentFile = path as string;
+      await loadAll();
+    } catch (e: any) {
+      fileError = e?.message ?? String(e);
+    }
+  }
+
+  async function fileSaveAs() {
+    fileMenuOpen = false;
+    fileError = '';
+    try {
+      const { save } = await import('@tauri-apps/plugin-dialog');
+      const { invoke } = await import('@tauri-apps/api/core');
+      const path = await save({
+        title: 'Save database as…',
+        filters: [{ name: 'TaskClaw DB', extensions: ['db'] }],
+        defaultPath: currentFileName(currentFile),
+      });
+      if (!path) return;
+      await invoke('file_save_as', { dest: path });
+      currentFile = path;
+    } catch (e: any) {
+      fileError = e?.message ?? String(e);
+    }
+  }
+
+  // ── Startup ────────────────────────────────────────────────────────────────
   onMount(async () => {
-    // Apply stored appearance before data loads
     const root = document.documentElement;
     const fontMap: Record<string, string> = {
       system:    'system-ui, -apple-system, sans-serif',
@@ -47,9 +121,9 @@
     if (savedTaskColor) root.style.setProperty('--task-color', savedTaskColor);
 
     await loadAll();
+    await loadCurrentFile();
     ready = true;
 
-    // Save window position before the window closes (if the user has enabled it)
     function onBeforeUnload() {
       if (localStorage.getItem('startup_remember_position') === 'true') {
         import('@tauri-apps/api/core').then(({ invoke }) => invoke('save_window_state').catch(() => {}));
@@ -75,6 +149,41 @@
 <div class="app-shell">
   <!-- Titlebar -->
   <header class="titlebar">
+
+    <!-- File menu (top-left, subtle) -->
+    <div class="file-menu-wrap">
+      <button
+        class="file-menu-btn"
+        class:open={fileMenuOpen}
+        on:click={() => { fileMenuOpen = !fileMenuOpen; fileError = ''; }}
+        title="File"
+        tabindex="-1"
+      >≡</button>
+
+      {#if fileMenuOpen}
+        <div class="fm-backdrop" on:click={() => fileMenuOpen = false} role="none"></div>
+        <div class="fm-panel" role="menu">
+          <button class="fm-item" on:click={fileNew} role="menuitem">
+            <span class="fm-icon">📄</span> New file…
+          </button>
+          <button class="fm-item" on:click={fileOpen} role="menuitem">
+            <span class="fm-icon">📂</span> Open file…
+          </button>
+          <button class="fm-item" on:click={fileSaveAs} role="menuitem">
+            <span class="fm-icon">💾</span> Save as…
+          </button>
+          <div class="fm-divider"></div>
+          <div class="fm-current" title={currentFile}>
+            <span class="fm-icon">🗄</span>
+            <span class="fm-filename">{currentFileName(currentFile)}</span>
+          </div>
+          {#if fileError}
+            <div class="fm-error">{fileError}</div>
+          {/if}
+        </div>
+      {/if}
+    </div>
+
     <div class="spacer"></div>
     {#if ready}
       <input class="search-input" placeholder="Search…" bind:value={$searchQuery} />
@@ -129,7 +238,6 @@
       {:else if $activeTabId === 'outline'}
         <TaskTree />
       {:else if $activeTabId === '__starred__' || $activeTabId === '__today__'}
-        <!-- Built-in flat views -->
         {#each [{ id: $activeTabId, name: $activeTabId === '__starred__' ? 'Starred' : 'Due Today',
                   show_completed: false, group_by: 'none', sort_by: 'due_date', sort_dir: 'asc',
                   visible_fields: [], filter_json: '{"action_filter":"all"}', position: 0 }] as v}
@@ -144,7 +252,6 @@
       {/if}
     </div>
 
-    <!-- Task Detail panel -->
     {#if $detailTaskId}
       <TaskDetail />
     {/if}
@@ -183,13 +290,93 @@
     display: flex;
     align-items: center;
     height: 36px;
-    padding: 0 8px 0 12px;
+    padding: 0 8px 0 4px;
     background: var(--surface);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
     -webkit-app-region: drag;
     user-select: none;
     gap: 6px;
+  }
+
+  /* ── File menu ── */
+  .file-menu-wrap {
+    position: relative;
+    flex-shrink: 0;
+    -webkit-app-region: no-drag;
+  }
+
+  .file-menu-btn {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: color 0.1s, background 0.1s;
+  }
+  .file-menu-btn:hover, .file-menu-btn.open { color: var(--text); background: var(--hover); }
+
+  .fm-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 899;
+  }
+
+  .fm-panel {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 900;
+    background: var(--surface-elevated);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+    padding: 4px 0;
+    min-width: 180px;
+  }
+
+  .fm-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    background: none;
+    border: none;
+    color: var(--text);
+    font-size: 12px;
+    padding: 6px 14px;
+    cursor: pointer;
+    text-align: left;
+  }
+  .fm-item:hover { background: var(--hover); }
+
+  .fm-icon { font-size: 13px; flex-shrink: 0; }
+
+  .fm-divider { height: 1px; background: var(--border); margin: 4px 0; }
+
+  .fm-current {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 14px;
+    font-size: 11px;
+    color: var(--text-dim);
+    overflow: hidden;
+  }
+  .fm-filename {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .fm-error {
+    font-size: 11px;
+    color: var(--red);
+    padding: 4px 14px 6px;
+    line-height: 1.4;
   }
 
   /* ── View tabs ── */

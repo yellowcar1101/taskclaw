@@ -14,7 +14,11 @@ pub fn db_path() -> PathBuf {
 }
 
 pub fn open() -> Result<Connection> {
-    let conn = Connection::open(db_path())?;
+    open_at(&db_path())
+}
+
+pub fn open_at(path: &PathBuf) -> Result<Connection> {
+    let conn = Connection::open(path)?;
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
     migrate(&conn)?;
     Ok(conn)

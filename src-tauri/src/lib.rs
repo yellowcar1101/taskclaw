@@ -8,6 +8,7 @@ use commands::flags::*;
 use commands::sync::*;
 use commands::webapi::{self, *};
 use commands::windows::*;
+use commands::files::*;
 use std::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -17,6 +18,7 @@ pub fn run() {
     let remember = startup.remember_position;
     let single   = startup.single_instance;
 
+    let db_path = db::db_path();
     let conn = db::open().expect("Failed to open database");
 
     let mut builder = tauri::Builder::default()
@@ -43,6 +45,7 @@ pub fn run() {
             Ok(())
         })
         .manage(DbState(Mutex::new(conn)))
+        .manage(DbPath(Mutex::new(db_path)))
         .invoke_handler(tauri::generate_handler![
             // tasks
             get_tasks,
@@ -108,6 +111,11 @@ pub fn run() {
             save_window_state,
             get_startup_config,
             save_startup_config,
+            // file management
+            file_current_path,
+            file_new,
+            file_open,
+            file_save_as,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
