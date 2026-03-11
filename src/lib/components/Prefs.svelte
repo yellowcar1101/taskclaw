@@ -50,107 +50,58 @@
 
   $: { appFont; appFontSize; appCompact; applyAppearance(); }
 
-  // ── GDrive Sync ──────────────────────────────────────────────────────────────
-  let gdriveConnected = false;
-  let gdriveLastSync: string | null = null;
-  let syncStatus = '';
+  // ── Folder Sync ───────────────────────────────────────────────────────────────
+  let syncFolder: string | null = null;
+  let folderLastSync: string | null = null;
   let syncing = false;
-  let connecting = false;
-  let hasCustomCreds = false;
-  let showOauthAdvanced = false;
-  let oauthClientId = '';
-  let oauthClientSecret = '';
-  let credsSaving = false;
-  let credsMsg = '';
+  let syncStatus = '';
 
   async function loadSyncStatus() {
     try {
-      gdriveConnected = await api.gdriveStatus();
-      gdriveLastSync = await api.gdriveLastSync();
-      hasCustomCreds = await api.gdriveHasCustomCredentials();
+      syncFolder = await api.getSyncFolder();
+      folderLastSync = await api.folderLastSync();
     } catch {}
   }
 
   onMount(loadSyncStatus);
 
-  async function openExternal(url: string) {
+  async function chooseFolder() {
     try {
-      const { openUrl } = await import('@tauri-apps/plugin-opener');
-      await openUrl(url);
-    } catch {}
-  }
-
-  async function saveCredentials() {
-    credsSaving = true;
-    credsMsg = '';
-    try {
-      await api.gdriveSetCredentials(oauthClientId.trim(), oauthClientSecret.trim());
-      hasCustomCreds = oauthClientId.trim().length > 0;
-      gdriveConnected = false;
-      oauthClientId = '';
-      oauthClientSecret = '';
-      credsMsg = hasCustomCreds ? 'Custom credentials saved. Please reconnect.' : 'Reverted to built-in credentials.';
-    } catch (e: any) {
-      credsMsg = 'Error: ' + (e?.message ?? String(e));
-    } finally {
-      credsSaving = false;
-    }
-  }
-
-  async function connectGDrive() {
-    connecting = true;
-    syncStatus = '';
-    try {
-      const { url, port } = await api.gdriveAuthUrl();
-      // Open browser
-      const { openUrl } = await import('@tauri-apps/plugin-opener');
-      await openUrl(url);
-      syncStatus = 'Waiting for Google authorization…';
-      // Wait for redirect (blocking call on Rust side)
-      const msg = await api.gdriveWaitAuth(port);
-      syncStatus = msg;
-      await loadSyncStatus();
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const result = await open({ directory: true, multiple: false, title: 'Choose sync folder' });
+      if (result) {
+        await api.setSyncFolder(result as string);
+        syncFolder = result as string;
+        syncStatus = '';
+      }
     } catch (e: any) {
       syncStatus = 'Error: ' + (e?.message ?? String(e));
-    } finally {
-      connecting = false;
     }
-  }
-
-  async function disconnect() {
-    await api.gdriveDisconnect();
-    gdriveConnected = false;
-    gdriveLastSync = null;
-    syncStatus = 'Disconnected.';
   }
 
   async function push() {
-    syncing = true;
-    syncStatus = '';
+    syncing = true; syncStatus = '';
     try {
-      syncStatus = await api.gdriveSyncPush();
-      gdriveLastSync = await api.gdriveLastSync();
+      const ts = await api.folderSyncPush();
+      folderLastSync = ts;
+      syncStatus = 'ok';
     } catch (e: any) {
       syncStatus = 'Error: ' + (e?.message ?? String(e));
-    } finally {
-      syncing = false;
-    }
+    } finally { syncing = false; }
   }
 
   async function pull() {
-    if (!confirm('This will REPLACE all local data with the cloud version. Continue?')) return;
-    syncing = true;
-    syncStatus = '';
+    if (!confirm('This will REPLACE all local data with the version in the sync file. Continue?')) return;
+    syncing = true; syncStatus = '';
     try {
-      syncStatus = await api.gdriveSyncPull();
-      // Reload all data
+      await api.folderSyncPull();
+      folderLastSync = await api.folderLastSync();
       const { loadAll } = await import('../stores/tasks');
       await loadAll();
+      syncStatus = 'ok';
     } catch (e: any) {
       syncStatus = 'Error: ' + (e?.message ?? String(e));
-    } finally {
-      syncing = false;
-    }
+    } finally { syncing = false; }
   }
 
   // ── Flags ────────────────────────────────────────────────────────────────────
@@ -439,136 +390,69 @@
 
       <!-- SYNC TAB -->
       {#if activeTab === 'sync'}
-        <div class="section-hint">
-          Sync your tasks to Google Drive. The sync file (<code>taskclaw-sync.json</code>) is stored
-          in your Drive root. Last-write-wins — push overwrites cloud, pull overwrites local.
+
+        <!-- How it works callout -->
+        <div class="sync-how">
+          <div class="sync-how-icon">💡</div>
+          <div>
+            TaskClaw syncs by saving one file (<code>taskclaw-sync.json</code>) to a folder you choose.
+            Point it at your <strong>Google Drive</strong>, <strong>OneDrive</strong>, or <strong>Dropbox</strong> folder
+            and your cloud provider syncs it automatically — no accounts to connect, no passwords to enter here.
+          </div>
         </div>
 
-        {#if gdriveConnected}
-          <div class="sync-status connected">
-            <span class="sync-dot connected"></span>
-            Connected to Google Drive
+        <!-- Folder picker -->
+        <div class="folder-row">
+          <div class="folder-path" class:unset={!syncFolder}>
+            {#if syncFolder}
+              📁 {syncFolder}
+            {:else}
+              No folder chosen yet
+            {/if}
           </div>
-          {#if gdriveLastSync}
+          <button class="sync-btn push" on:click={chooseFolder}>
+            {syncFolder ? 'Change folder' : 'Choose folder…'}
+          </button>
+        </div>
+
+        {#if syncFolder}
+          {#if folderLastSync}
             <div class="info-row">
-              <span class="info-label">Last sync</span>
-              <span class="info-value dim">{new Date(gdriveLastSync).toLocaleString()}</span>
+              <span class="info-label">Last synced</span>
+              <span class="info-value dim">{new Date(folderLastSync).toLocaleString()}</span>
             </div>
           {/if}
+
           <div class="sync-actions">
             <button class="sync-btn push" on:click={push} disabled={syncing}>
-              {syncing ? '…' : '↑ Push to Cloud'}
+              {syncing ? '…' : '↑ Save to folder'}
             </button>
             <button class="sync-btn pull" on:click={pull} disabled={syncing}>
-              {syncing ? '…' : '↓ Pull from Cloud'}
+              {syncing ? '…' : '↓ Load from folder'}
             </button>
-            <button class="sync-btn danger" on:click={disconnect}>Disconnect</button>
+          </div>
+
+          <div class="section-hint" style="margin-top:4px">
+            <strong>Save to folder</strong> writes your tasks to the sync file.
+            <strong>Load from folder</strong> replaces your local tasks with whatever is in the file —
+            use this on a second device after saving from the first.
           </div>
         {:else}
-          <div class="sync-status">
-            <span class="sync-dot"></span>
-            Not connected
-          </div>
-          <button class="sync-btn connect" on:click={connectGDrive} disabled={connecting}>
-            {connecting ? 'Connecting…' : '🔗 Connect to Google Drive'}
-          </button>
           <div class="section-hint" style="margin-top:8px">
-            Your browser will open to authorize TaskClaw. After approval, return here.
+            <strong>Where to find your cloud folder:</strong><br>
+            • Google Drive for Desktop → usually <code>G:\My Drive</code> or <code>C:\Users\You\Google Drive</code><br>
+            • OneDrive → usually <code>C:\Users\You\OneDrive</code><br>
+            • Dropbox → usually <code>C:\Users\You\Dropbox</code><br><br>
+            If you don't use cloud storage, you can pick any folder and copy the file manually.
           </div>
         {/if}
 
-        {#if syncStatus}
-          <div class="sync-msg" class:err={syncStatus.startsWith('Error')}>{syncStatus}</div>
+        {#if syncStatus === 'ok'}
+          <div class="sync-msg">Done.</div>
+        {:else if syncStatus.startsWith('Error')}
+          <div class="sync-msg err">{syncStatus}</div>
         {/if}
 
-        <!-- Advanced: custom OAuth credentials -->
-        <div class="oauth-advanced">
-          <button class="oauth-toggle" on:click={() => showOauthAdvanced = !showOauthAdvanced}>
-            {showOauthAdvanced ? '▾' : '▸'} Advanced: Google OAuth credentials
-            {#if hasCustomCreds}<span class="creds-badge">custom</span>{/if}
-          </button>
-          {#if showOauthAdvanced}
-            <div class="oauth-panel">
-              <p class="oauth-intro">
-                By default TaskClaw uses a shared built-in Google app, which may require approval
-                or show a warning. You can create your own free Google Cloud project in about
-                5 minutes — this gives you full control and works with any Google account
-                (personal or work) with no restrictions.
-              </p>
-
-              <div class="oauth-steps">
-                <div class="oauth-step">
-                  <span class="step-num">1</span>
-                  <div class="step-body">
-                    <strong>Create a free Google Cloud project</strong><br>
-                    Go to <button class="step-link" on:click={() => openExternal('https://console.cloud.google.com/projectcreate')}>console.cloud.google.com/projectcreate</button>.
-                    Sign in with the Google account you want to sync to (e.g. your personal Gmail).
-                    Give the project any name — "TaskClaw Sync" works fine — then click <em>Create</em>.
-                  </div>
-                </div>
-
-                <div class="oauth-step">
-                  <span class="step-num">2</span>
-                  <div class="step-body">
-                    <strong>Enable the Google Drive API</strong><br>
-                    Open <button class="step-link" on:click={() => openExternal('https://console.cloud.google.com/apis/library/drive.googleapis.com')}>APIs &amp; Services → Library → Google Drive API</button>
-                    and click the blue <em>Enable</em> button. This takes a few seconds.
-                  </div>
-                </div>
-
-                <div class="oauth-step">
-                  <span class="step-num">3</span>
-                  <div class="step-body">
-                    <strong>Configure the OAuth consent screen</strong><br>
-                    Go to <button class="step-link" on:click={() => openExternal('https://console.cloud.google.com/apis/credentials/consent')}>APIs &amp; Services → OAuth consent screen</button>.
-                    Choose <em>External</em>, click <em>Create</em>. Fill in only the required fields:
-                    App name (e.g. "TaskClaw"), your email as support contact, your email again
-                    as developer contact. Click <em>Save and Continue</em> through the remaining
-                    screens (no scopes or test users needed). On the last screen click <em>Back to Dashboard</em>.
-                  </div>
-                </div>
-
-                <div class="oauth-step">
-                  <span class="step-num">4</span>
-                  <div class="step-body">
-                    <strong>Create OAuth credentials</strong><br>
-                    Go to <button class="step-link" on:click={() => openExternal('https://console.cloud.google.com/apis/credentials')}>APIs &amp; Services → Credentials</button>.
-                    Click <em>+ Create Credentials</em> → <em>OAuth client ID</em>.
-                    For Application type choose <em>Desktop app</em>, give it any name, click <em>Create</em>.<br><br>
-                    A popup appears with your <strong>Client ID</strong> and <strong>Client Secret</strong>.
-                    Copy them and paste below. You can also download the JSON file and find the values
-                    inside it as <code>client_id</code> and <code>client_secret</code>.
-                  </div>
-                </div>
-              </div>
-
-              <div class="info-row" style="margin-top:12px">
-                <span class="info-label">Client ID</span>
-                <input class="name-input" style="flex:1" placeholder="…apps.googleusercontent.com"
-                  bind:value={oauthClientId} />
-              </div>
-              <div class="info-row">
-                <span class="info-label">Client Secret</span>
-                <input class="name-input" style="flex:1" type="password" placeholder="GOCSPX-…"
-                  bind:value={oauthClientSecret} />
-              </div>
-              <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
-                <button class="sync-btn push" on:click={saveCredentials} disabled={credsSaving}>
-                  {credsSaving ? '…' : 'Save credentials'}
-                </button>
-                {#if hasCustomCreds}
-                  <button class="sync-btn danger" on:click={() => { oauthClientId = ''; oauthClientSecret = ''; saveCredentials(); }}
-                    disabled={credsSaving}>
-                    Revert to built-in
-                  </button>
-                {/if}
-              </div>
-              {#if credsMsg}
-                <div class="sync-msg" class:err={credsMsg.startsWith('Error')} style="margin-top:8px">{credsMsg}</div>
-              {/if}
-            </div>
-          {/if}
-        </div>
       {/if}
 
       <!-- API TAB -->
@@ -857,81 +741,22 @@
   }
   .sync-msg.err { color: var(--red); background: #E05C5C22; }
 
-  .oauth-advanced {
-    margin-top: 16px;
-    border-top: 1px solid var(--border);
-    padding-top: 10px;
-  }
-  .oauth-toggle {
-    background: none;
-    border: none;
-    color: var(--text-dim);
-    cursor: pointer;
-    font-size: 11px;
-    padding: 2px 0;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .oauth-toggle:hover { color: var(--text); }
-  .oauth-panel {
-    margin-top: 10px;
-    padding: 10px;
-    background: var(--hover);
-    border-radius: 5px;
-    border: 1px solid var(--border);
-  }
-  .creds-badge {
-    font-size: 10px;
-    background: var(--accent-dim);
-    color: var(--accent);
-    border-radius: 3px;
-    padding: 1px 5px;
-  }
-
-  .oauth-intro {
-    font-size: 11px;
-    color: var(--text-dim);
-    margin: 0 0 12px 0;
-    line-height: 1.5;
-  }
-
-  .oauth-steps {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .oauth-step {
+  .sync-how {
     display: flex;
     gap: 10px;
     align-items: flex-start;
-  }
-
-  .step-num {
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: var(--accent);
-    color: #fff;
-    font-size: 11px;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    margin-top: 1px;
-  }
-
-  .step-body {
+    background: var(--hover);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
     font-size: 11px;
     color: var(--text-dim);
     line-height: 1.6;
-    flex: 1;
+    margin-bottom: 14px;
   }
-
-  .step-body strong { color: var(--text); }
-  .step-body code {
+  .sync-how-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+  .sync-how strong { color: var(--text); }
+  .sync-how code {
     background: var(--hover-btn);
     border: 1px solid var(--border);
     border-radius: 3px;
@@ -939,15 +764,24 @@
     font-size: 10px;
   }
 
-  .step-link {
-    background: none;
-    border: none;
-    color: var(--accent);
-    cursor: pointer;
-    font-size: 11px;
-    padding: 0;
-    text-decoration: underline;
-    text-underline-offset: 2px;
+  .folder-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
   }
-  .step-link:hover { opacity: 0.8; }
+  .folder-path {
+    flex: 1;
+    font-size: 11px;
+    color: var(--text);
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 5px 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .folder-path.unset { color: var(--text-dim); font-style: italic; }
 </style>

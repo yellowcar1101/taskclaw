@@ -83,6 +83,22 @@ export const api = {
   gdriveHasCustomCredentials: (): Promise<boolean> =>
     invoke('gdrive_has_custom_credentials'),
 
+  // ── Folder sync ────────────────────────────────────────────────────────────
+  setSyncFolder: (path: string): Promise<void> =>
+    invoke('set_sync_folder', { path }),
+
+  getSyncFolder: (): Promise<string | null> =>
+    invoke('get_sync_folder'),
+
+  folderSyncPush: (): Promise<string> =>
+    invoke('folder_sync_push'),
+
+  folderSyncPull: (): Promise<string> =>
+    invoke('folder_sync_pull'),
+
+  folderLastSync: (): Promise<string | null> =>
+    invoke('folder_last_sync'),
+
   // ── Flags ──────────────────────────────────────────────────────────────
   getFlags: (): Promise<Flag[]> =>
     invoke('get_flags'),

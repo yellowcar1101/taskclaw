@@ -15,6 +15,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|_app| {
             webapi::autostart_if_enabled();
             Ok(())
@@ -69,6 +70,12 @@ pub fn run() {
             gdrive_last_sync,
             gdrive_set_credentials,
             gdrive_has_custom_credentials,
+            // folder sync
+            set_sync_folder,
+            get_sync_folder,
+            folder_sync_push,
+            folder_sync_pull,
+            folder_last_sync,
             // web api
             webapi_start,
             webapi_set_token,

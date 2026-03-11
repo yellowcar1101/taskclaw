@@ -599,3 +599,79 @@ pub fn gdrive_last_sync(state: State<DbState>) -> Option<String> {
         [], |r| r.get(0)
     ).ok()
 }
+
+// ── Local folder sync ─────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn set_sync_folder(state: State<DbState>, path: String) -> Result<(), String> {
+    let conn = state.0.lock().unwrap();
+    conn.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('sync_folder', ?1)",
+        params![&path],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_sync_folder(state: State<DbState>) -> Option<String> {
+    let conn = state.0.lock().unwrap();
+    conn.query_row(
+        "SELECT value FROM app_settings WHERE key='sync_folder'", [], |r| r.get(0)
+    ).ok()
+}
+
+#[tauri::command]
+pub fn folder_sync_push(state: State<DbState>) -> Result<String, String> {
+    let conn = state.0.lock().unwrap();
+    let folder: String = conn.query_row(
+        "SELECT value FROM app_settings WHERE key='sync_folder'", [], |r| r.get(0)
+    ).map_err(|_| "No sync folder set. Choose a folder in Preferences → Sync.")?;
+
+    let payload = build_sync_payload(&conn)?;
+    let json_str = serde_json::to_string_pretty(&payload).map_err(|e| e.to_string())?;
+
+    let path = std::path::Path::new(&folder).join("taskclaw-sync.json");
+    std::fs::write(&path, &json_str)
+        .map_err(|e| format!("Could not write to folder: {}. Make sure the folder exists and is writable.", e))?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT OR REPLACE INTO app_settings (key,value) VALUES ('folder_last_sync',?1)",
+        params![&now],
+    ).ok();
+
+    Ok(now)
+}
+
+#[tauri::command]
+pub fn folder_sync_pull(state: State<DbState>) -> Result<String, String> {
+    let conn = state.0.lock().unwrap();
+    let folder: String = conn.query_row(
+        "SELECT value FROM app_settings WHERE key='sync_folder'", [], |r| r.get(0)
+    ).map_err(|_| "No sync folder set. Choose a folder in Preferences → Sync.")?;
+
+    let path = std::path::Path::new(&folder).join("taskclaw-sync.json");
+    let content = std::fs::read_to_string(&path)
+        .map_err(|_| "taskclaw-sync.json not found in that folder. Push from another device first, or check the folder is correct.")?;
+
+    let payload: SyncPayload = serde_json::from_str(&content)
+        .map_err(|e| format!("Sync file is corrupted or not a TaskClaw file: {}", e))?;
+
+    restore_payload(&conn, &payload)?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT OR REPLACE INTO app_settings (key,value) VALUES ('folder_last_sync',?1)",
+        params![&now],
+    ).ok();
+
+    Ok(payload.exported_at)
+}
+
+#[tauri::command]
+pub fn folder_last_sync(state: State<DbState>) -> Option<String> {
+    let conn = state.0.lock().unwrap();
+    conn.query_row(
+        "SELECT value FROM app_settings WHERE key='folder_last_sync'", [], |r| r.get(0)
+    ).ok()
+}
