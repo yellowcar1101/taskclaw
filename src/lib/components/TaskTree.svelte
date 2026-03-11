@@ -5,8 +5,10 @@
     rootTasks, sortField, sortDir, toggleSort,
     expandAll, collapseAll, clearSelection, createTask, editingId,
     showRapidInput, selected, taskById, expanded,
-    moveTask, reorderTasks, deleteTask, childrenOf
+    moveTask, reorderTasks, deleteTask, childrenOf,
+    setSelected, outlineScrollToId
   } from '../stores/tasks';
+  import type { Task } from '../types';
 
   // ── Selected task context ─────────────────────────────────────────────────
   $: selectedId = $selected.size === 1 ? [...$selected][0] : null;
@@ -66,13 +68,45 @@
     }
   }
 
+  // ── Arrow key navigation ─────────────────────────────────────────────────
+  function getVisibleFlat(): string[] {
+    const result: string[] = [];
+    function walk(tasks: Task[]) {
+      for (const t of tasks) {
+        result.push(t.id);
+        if ($expanded.has(t.id)) {
+          walk($childrenOf.get(t.id) ?? []);
+        }
+      }
+    }
+    walk($rootTasks);
+    return result;
+  }
+
+  function navigateSelection(dir: 1 | -1) {
+    const flat = getVisibleFlat();
+    if (!flat.length) return;
+    const idx = selectedId ? flat.indexOf(selectedId) : -1;
+    const newIdx = idx === -1
+      ? (dir === 1 ? 0 : flat.length - 1)
+      : Math.max(0, Math.min(flat.length - 1, idx + dir));
+    const newId = flat[newIdx];
+    if (newId) {
+      setSelected(newId, false);
+      outlineScrollToId.set(newId);
+    }
+  }
+
   function onGlobalKeydown(e: KeyboardEvent) {
+    const inInput = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement)?.isContentEditable;
     if (e.ctrlKey && e.shiftKey && e.key === 'I') {
       e.preventDefault();
       showRapidInput.set(true);
     }
-    if (e.key === 'Delete' && hasSelected && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
-      onDelete();
+    if (!inInput) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); navigateSelection(1); }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); navigateSelection(-1); }
+      if (e.key === 'Delete' && hasSelected) onDelete();
     }
   }
 
@@ -277,8 +311,8 @@
   .col-header.caption-col { flex: 1; }
   .col-header.due-col     { width: 80px; flex-shrink: 0; }
   .col-header.start-col   { width: 70px; flex-shrink: 0; }
-  .col-header.flag-col    { width: 90px; flex-shrink: 0; }
-  .col-header.tags-col    { width: 100px; flex-shrink: 0; }
+  .col-header.flag-col    { width: 30px; flex-shrink: 0; text-align: center; justify-content: center; }
+  .col-header.tags-col    { width: 52px; flex-shrink: 0; text-align: center; justify-content: center; }
   .sort-arrow { color: var(--accent); font-size: 10px; }
 
   .task-list {

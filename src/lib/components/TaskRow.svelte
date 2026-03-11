@@ -194,19 +194,21 @@
       <span class="caption-text" class:starred={task.starred}>{task.caption}</span>
     {/if}
 
-    <!-- Flag indicator -->
-    {#if task.flag}
+    <!-- Flag indicator (hidden when dedicated Flag column is visible) -->
+    {#if task.flag && !visibleCols.has('flag')}
       <span class="flag-chip" style="background:{task.flag.color}22;color:{task.flag.color};border-color:{task.flag.color}44">
         {task.flag.name}
       </span>
     {/if}
 
-    <!-- Tag chips -->
-    {#each task.tags as tag}
-      <span class="tag-chip" style="background:{tag.color}22;color:{tag.color};border-color:{tag.color}44">
-        {tag.name}
-      </span>
-    {/each}
+    <!-- Tag chips (hidden when dedicated Tags column is visible) -->
+    {#if !visibleCols.has('tags')}
+      {#each task.tags as tag}
+        <span class="tag-chip" style="background:{tag.color}22;color:{tag.color};border-color:{tag.color}44">
+          {tag.name}
+        </span>
+      {/each}
+    {/if}
 
     <!-- Email link indicators -->
     {#each task.email_links as link}
@@ -224,18 +226,20 @@
     <div class="col-start">{task.start_date ? task.start_date.split('T')[0] : ''}</div>
   {/if}
 
-  <!-- Flag column -->
-  {#if visibleCols.has('flag') && task.flag}
+  <!-- Flag column — dot only -->
+  {#if visibleCols.has('flag')}
     <div class="col-flag">
-      <span class="flag-pill" style="background:{task.flag.color}22;color:{task.flag.color};">{task.flag.name}</span>
+      {#if task.flag}
+        <span class="col-dot" style="background:{task.flag.color}" title={task.flag.name}></span>
+      {/if}
     </div>
   {/if}
 
-  <!-- Tags column -->
-  {#if visibleCols.has('tags') && task.tags.length}
+  <!-- Tags column — dots only -->
+  {#if visibleCols.has('tags')}
     <div class="col-tags">
-      {#each task.tags.slice(0, 2) as tag}
-        <span class="tag-pill" style="background:{tag.color}22;color:{tag.color};">{tag.name}</span>
+      {#each task.tags.slice(0, 4) as tag}
+        <span class="col-dot" style="background:{tag.color}" title={tag.name}></span>
       {/each}
     </div>
   {/if}
@@ -309,8 +313,8 @@
   }
 
   .caption-text {
-    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
-    font-size: 13px;
+    font-family: var(--app-font);
+    font-size: var(--app-font-size, 13px);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -320,8 +324,8 @@
   .caption-text.starred::before { content: '★ '; color: var(--amber); }
 
   .caption-input {
-    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
-    font-size: 13px;
+    font-family: var(--app-font);
+    font-size: var(--app-font-size, 13px);
     background: var(--input-bg);
     border: 1px solid var(--accent);
     color: var(--text);
@@ -367,26 +371,26 @@
   }
 
   .col-flag {
-    width: 90px;
-    flex-shrink: 0;
-    overflow: hidden;
-  }
-  .col-tags {
-    width: 100px;
+    width: 30px;
     flex-shrink: 0;
     display: flex;
-    gap: 3px;
-    overflow: hidden;
+    align-items: center;
+    justify-content: center;
   }
-  .flag-pill, .tag-pill {
-    font-size: 10px;
-    padding: 1px 5px;
-    border-radius: 8px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: block;
-    max-width: 100%;
+  .col-tags {
+    width: 52px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    justify-content: center;
+  }
+  .col-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: inline-block;
   }
 
 </style>
