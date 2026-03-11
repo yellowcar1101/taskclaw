@@ -166,25 +166,25 @@
         <div class="help-cols">
           <div class="help-col">
             <div class="help-heading">Metadata tokens</div>
-            <table class="help-table">
+            <table class="help-table"><tbody>
               <tr><td><code>!FlagName</code></td><td>Assign a flag (partial match)</td></tr>
               <tr><td><code>#tag</code> or <code>@tag</code></td><td>Assign a tag</td></tr>
               <tr><td><code>*</code> or <code>-star</code></td><td>Mark as starred / priority</td></tr>
               <tr><td><code>"quoted caption"</code></td><td>Protect caption from token parsing</td></tr>
-            </table>
+            </tbody></table>
 
             <div class="help-heading" style="margin-top:10px">Dates — prefix tokens</div>
-            <table class="help-table">
+            <table class="help-table"><tbody>
               <tr><td><code>s:date</code> or <code>-s date</code></td><td>Start date</td></tr>
               <tr><td><code>d:date</code> or <code>-d date</code></td><td>Due date</td></tr>
               <tr><td><code>remind N min before</code></td><td>Reminder N minutes before due</td></tr>
               <tr><td><code>remind N hours before</code></td><td>Reminder N hours before due</td></tr>
               <tr><td><code>remind at tomorrow 3pm</code></td><td>Absolute reminder</td></tr>
-            </table>
+            </tbody></table>
           </div>
           <div class="help-col">
             <div class="help-heading">Date expressions</div>
-            <table class="help-table">
+            <table class="help-table"><tbody>
               <tr><td><code>today</code> / <code>tomorrow</code></td><td>Relative days</td></tr>
               <tr><td><code>monday</code> … <code>sunday</code></td><td>Next occurrence of weekday</td></tr>
               <tr><td><code>next monday</code></td><td>Force next week's Monday</td></tr>
@@ -193,13 +193,13 @@
               <tr><td><code>jan 15</code> / <code>3/15</code></td><td>Month + day (next occurrence)</td></tr>
               <tr><td><code>2026-04-01</code></td><td>ISO date</td></tr>
               <tr><td><code>+3d</code> / <code>+2w</code></td><td>Shorthand +N days / weeks</td></tr>
-            </table>
+            </tbody></table>
 
             <div class="help-heading" style="margin-top:10px">Time (append to any date)</div>
-            <table class="help-table">
+            <table class="help-table"><tbody>
               <tr><td><code>… at 2pm</code></td><td>12-hour with meridiem</td></tr>
               <tr><td><code>… at 14:00</code></td><td>24-hour</td></tr>
-            </table>
+            </tbody></table>
 
             <div class="help-heading" style="margin-top:10px">Structure</div>
             <table class="help-table">

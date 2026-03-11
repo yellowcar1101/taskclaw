@@ -233,7 +233,7 @@
     >
       Set Start Date ▶
       {#if activeSubmenu === 'start'}
-        <div class="submenu" on:mouseenter={() => openSubmenu('start')} on:mouseleave={() => closeSubmenu('start')} role="menu">
+        <div class="submenu" on:mouseenter={() => openSubmenu('start')} on:mouseleave={() => closeSubmenu('start')} role="menu" tabindex="-1">
           {#each [0,1,2,3,4,5,6] as n}
             <div class="item" role="menuitem" tabindex="0" on:click={() => setDate('start_date', quickDate(n))} on:keydown>
               {n === 0 ? 'Today' : n === 1 ? 'Tomorrow' : `In ${n} days`} &nbsp;<span class="dim">{weekdayLabel(n)}</span>
@@ -253,7 +253,7 @@
     >
       Set Due Date ▶
       {#if activeSubmenu === 'due'}
-        <div class="submenu" on:mouseenter={() => openSubmenu('due')} on:mouseleave={() => closeSubmenu('due')} role="menu">
+        <div class="submenu" on:mouseenter={() => openSubmenu('due')} on:mouseleave={() => closeSubmenu('due')} role="menu" tabindex="-1">
           {#each [0,1,2,3,4,5,6] as n}
             <div class="item" role="menuitem" tabindex="0" on:click={() => setDate('due_date', quickDate(n))} on:keydown>
               {n === 0 ? 'Today' : n === 1 ? 'Tomorrow' : `In ${n} days`} &nbsp;<span class="dim">{weekdayLabel(n)}</span>
@@ -284,7 +284,7 @@
     >
       Flag ▶
       {#if activeSubmenu === 'flag'}
-        <div class="submenu" on:mouseenter={() => openSubmenu('flag')} on:mouseleave={() => closeSubmenu('flag')} role="menu">
+        <div class="submenu" on:mouseenter={() => openSubmenu('flag')} on:mouseleave={() => closeSubmenu('flag')} role="menu" tabindex="-1">
           {#each $flags as flag}
             <div class="item" role="menuitem" tabindex="0" on:click={() => setFlag(task?.flag_id === flag.id ? null : flag.id)} on:keydown>
               <span class="flag-dot" style="background:{flag.color}"></span>
@@ -306,7 +306,7 @@
     >
       Tag ▶
       {#if activeSubmenu === 'tag'}
-        <div class="submenu" on:mouseenter={() => openSubmenu('tag')} on:mouseleave={() => closeSubmenu('tag')} role="menu">
+        <div class="submenu" on:mouseenter={() => openSubmenu('tag')} on:mouseleave={() => closeSubmenu('tag')} role="menu" tabindex="-1">
           {#each $tags as tag}
             <div class="item" role="menuitem" tabindex="0" on:click={() => toggleTag(tag.id)} on:keydown>
               <span class="tag-dot" style="background:{tag.color}"></span>
@@ -328,7 +328,7 @@
     >
       Star ▶
       {#if activeSubmenu === 'star'}
-        <div class="submenu" on:mouseenter={() => openSubmenu('star')} on:mouseleave={() => closeSubmenu('star')} role="menu">
+        <div class="submenu" on:mouseenter={() => openSubmenu('star')} on:mouseleave={() => closeSubmenu('star')} role="menu" tabindex="-1">
           <div class="item" role="menuitem" tabindex="0" on:click={() => doStar(true)} on:keydown>⭐ Star Task</div>
           <div class="item" role="menuitem" tabindex="0" on:click={() => doStar(false)} on:keydown>Clear Star</div>
           <div class="item" role="menuitem" tabindex="0" on:click={() => doStar(!task?.starred)} on:keydown>Toggle Star</div>
@@ -346,7 +346,7 @@
     >
       Advanced ▶
       {#if activeSubmenu === 'adv'}
-        <div class="submenu" on:mouseenter={() => openSubmenu('adv')} on:mouseleave={() => closeSubmenu('adv')} role="menu">
+        <div class="submenu" on:mouseenter={() => openSubmenu('adv')} on:mouseleave={() => closeSubmenu('adv')} role="menu" tabindex="-1">
           <div class="item" role="menuitem" tabindex="0" on:click={doCompleteBranch} on:keydown>Complete Task and All Subtasks</div>
           <div class="item" role="menuitem" tabindex="0" on:click={doUncompleteBranch} on:keydown>Uncomplete Task and All Subtasks</div>
         </div>
