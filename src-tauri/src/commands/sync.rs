@@ -14,6 +14,9 @@ use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
+use std::thread;
+use std::sync::mpsc;
+use std::time::Duration;
 use tauri::State;
 
 use crate::commands::tasks::DbState;
@@ -56,13 +59,19 @@ pub fn gdrive_auth_url() -> Result<AuthInfo, String> {
 pub fn gdrive_wait_auth(state: State<'_, DbState>, port: u16) -> Result<String, String> {
     let redirect = format!("http://localhost:{}", port);
 
-    // Start local server
+    // Start local server with 3-minute timeout
     let listener =
         TcpListener::bind(format!("127.0.0.1:{}", port)).map_err(|e| e.to_string())?;
-    listener.set_nonblocking(false).ok();
 
-    // Accept one connection (browser redirect)
-    let (stream, _) = listener.accept().map_err(|e| e.to_string())?;
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        if let Ok((stream, _)) = listener.accept() {
+            tx.send(stream).ok();
+        }
+    });
+
+    let stream = rx.recv_timeout(Duration::from_secs(180))
+        .map_err(|_| "Authorization timed out (3 minutes). Please try again.".to_string())?;
     let reader = BufReader::new(&stream);
     let first_line = reader.lines().next().ok_or("no request")?.map_err(|e| e.to_string())?;
 

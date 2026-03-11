@@ -24,6 +24,7 @@
   // ── Notes ───────────────────────────────────────────────────────────────────
   let noteEditing = false;
   let noteValue = '';
+  let noteEl: HTMLTextAreaElement;
 
   $: if (task) noteValue = task.note ?? '';
 
@@ -31,6 +32,36 @@
     if (!task) return;
     noteEditing = false;
     if (noteValue !== task.note) await updateTask(task.id, { note: noteValue });
+  }
+
+  function wrap(before: string, after: string, placeholder = '') {
+    const el = noteEl;
+    if (!el) return;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const selected = noteValue.slice(start, end) || placeholder;
+    const replacement = before + selected + after;
+    noteValue = noteValue.slice(0, start) + replacement + noteValue.slice(end);
+    setTimeout(() => {
+      el.focus();
+      const newStart = start + before.length;
+      const newEnd = newStart + selected.length;
+      el.setSelectionRange(newStart, newEnd);
+    }, 0);
+  }
+
+  function insertLink() {
+    const el = noteEl;
+    if (!el) return;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const selected = noteValue.slice(start, end);
+    const url = prompt('URL:');
+    if (!url) return;
+    const text = selected || 'link text';
+    const replacement = `[${text}](${url})`;
+    noteValue = noteValue.slice(0, start) + replacement + noteValue.slice(end);
+    setTimeout(() => { el.focus(); el.setSelectionRange(start + 1, start + 1 + text.length); }, 0);
   }
 
   function renderMarkdown(md: string): string {
@@ -205,8 +236,19 @@
       {#if !collapsed.notes}
         <div class="sec-body">
           {#if noteEditing}
+            <div class="note-toolbar">
+              <button class="nt-btn" on:click={() => wrap('**', '**', 'bold')} title="Bold"><strong>B</strong></button>
+              <button class="nt-btn" on:click={() => wrap('*', '*', 'italic')} title="Italic"><em>I</em></button>
+              <button class="nt-btn" on:click={() => wrap('~~', '~~', 'text')} title="Strikethrough"><s>S</s></button>
+              <button class="nt-btn" on:click={() => wrap('`', '`', 'code')} title="Inline code" style="font-family:monospace">``</button>
+              <button class="nt-btn" on:click={insertLink} title="Insert link">🔗</button>
+              <div class="nt-sep"></div>
+              <button class="nt-btn" on:click={() => wrap('# ', '', 'Heading')} title="Heading">H</button>
+              <button class="nt-btn" on:click={() => wrap('- ', '', 'item')} title="List item">•</button>
+            </div>
             <textarea
               class="note-editor"
+              bind:this={noteEl}
               bind:value={noteValue}
               on:blur={saveNote}
               rows="8"
@@ -510,10 +552,34 @@
   .note-preview :global(code) { background: var(--input-bg); padding: 1px 4px; border-radius: 2px; font-size: 11px; }
   .note-preview :global(p) { margin: 4px 0; }
 
+  .note-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    padding: 3px 2px;
+    background: var(--surface-elevated);
+    border: 1px solid var(--border);
+    border-bottom: none;
+    border-radius: 3px 3px 0 0;
+  }
+  .nt-btn {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    line-height: 1.4;
+  }
+  .nt-btn:hover { color: var(--text); background: var(--hover); }
+  .nt-sep { width: 1px; height: 14px; background: var(--border); margin: 0 3px; }
+
   .note-editor {
     width: 100%;
     background: var(--input-bg);
     border: 1px solid var(--accent);
+    border-radius: 0 0 3px 3px !important;
     color: var(--text);
     font-family: 'Cascadia Code', monospace;
     font-size: 12px;
