@@ -291,7 +291,7 @@
               on:blur={saveNote}
               rows="8"
               placeholder="Add notes…"
-              autofocus
+
             ></textarea>
           {:else}
             <div
@@ -379,7 +379,7 @@
                   {#each tagDropdown as tid}
                     {@const t = $tags.find(x => x.id === tid)}
                     {#if t}
-                      <div class="tag-opt" on:click={() => addTag(tid)} role="option" tabindex="0" on:keydown>
+                      <div class="tag-opt" on:click={() => addTag(tid)} role="option" aria-selected="false" tabindex="0" on:keydown>
                         <span style="width:8px;height:8px;border-radius:50%;background:{t.color};display:inline-block;margin-right:4px"></span>
                         {t.name}
                       </div>

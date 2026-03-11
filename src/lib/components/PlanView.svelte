@@ -188,7 +188,7 @@
         title="Drag to reorder"
       >
         <span class="col-label">{col.label}</span>
-        <div class="resize-handle" on:mousedown={e => onResizeStart(e, col.id)}></div>
+        <div class="resize-handle" role="separator" on:mousedown={e => onResizeStart(e, col.id)}></div>
       </div>
     {/each}
 

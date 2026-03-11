@@ -202,10 +202,10 @@
             </tbody></table>
 
             <div class="help-heading" style="margin-top:10px">Structure</div>
-            <table class="help-table">
+            <table class="help-table"><tbody>
               <tr><td>Indent with spaces or tabs</td><td>Creates subtasks</td></tr>
               <tr><td>Bare date at end of line</td><td>Auto-detected as due date</td></tr>
-            </table>
+            </tbody></table>
           </div>
         </div>
         <div class="help-example">

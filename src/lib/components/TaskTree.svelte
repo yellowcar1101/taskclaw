@@ -298,7 +298,7 @@
       {:else}
         <span class="col-label">{col.label}</span>
       {/if}
-      <div class="resize-handle" on:mousedown={e => onResizeStart(e, col.id)}></div>
+      <div class="resize-handle" role="separator" on:mousedown={e => onResizeStart(e, col.id)}></div>
     </div>
   {/each}
 </div>
