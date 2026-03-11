@@ -7,6 +7,7 @@ use commands::tasks::*;
 use commands::flags::*;
 use commands::sync::*;
 use commands::webapi::{self, *};
+use commands::windows::*;
 use std::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -80,6 +81,9 @@ pub fn run() {
             webapi_start,
             webapi_set_token,
             webapi_status,
+            // windows
+            show_reminder_window,
+            hide_reminder_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
