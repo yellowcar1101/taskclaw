@@ -12,7 +12,7 @@
   import {
     loadAll, detailTaskId, showPrefs, showRapidInput,
     contextMenu, views, activeTabId, editingViewId,
-    filterFlagId, flags, searchQuery
+    searchQuery
   } from '$lib/stores/tasks';
 
   let ready = false;
@@ -43,6 +43,8 @@
     root.style.setProperty('--app-font', fontMap[savedFont] ?? fontMap.system);
     root.style.setProperty('--app-font-size', savedSize + 'px');
     root.style.setProperty('--row-height', savedCompact ? '22px' : '28px');
+    const savedTaskColor = localStorage.getItem('app_task_color') ?? '';
+    if (savedTaskColor) root.style.setProperty('--task-color', savedTaskColor);
 
     await loadAll();
     ready = true;
@@ -64,20 +66,8 @@
 <div class="app-shell">
   <!-- Titlebar -->
   <header class="titlebar">
-    <span class="app-name">TaskClaw</span>
     <div class="spacer"></div>
     {#if ready}
-      <!-- Flag filter -->
-      <select class="flag-filter" bind:value={$filterFlagId}>
-        <option value={null}>All flags</option>
-        <option value="__starred__">⭐ Starred</option>
-        <option value="__today__">◷ Due Today</option>
-        {#each $flags as flag}
-          <option value={flag.id}>{flag.name}</option>
-        {/each}
-      </select>
-
-      <!-- Search -->
       <input class="search-input" placeholder="Search…" bind:value={$searchQuery} />
     {/if}
     <button class="titlebar-btn" on:click={() => showPrefs.set(true)} title="Preferences">⚙ Prefs</button>
@@ -193,16 +183,6 @@
     gap: 6px;
   }
 
-  .app-name {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--accent);
-    letter-spacing: 0.05em;
-    font-family: 'Cascadia Code', monospace;
-    -webkit-app-region: no-drag;
-    flex-shrink: 0;
-  }
-
   /* ── View tabs ── */
   .view-tabs {
     display: flex;
@@ -260,18 +240,6 @@
     padding: 5px 12px;
     font-size: 14px;
     color: var(--text-dim);
-  }
-
-  .flag-filter {
-    background: var(--input-bg);
-    border: 1px solid var(--border);
-    color: var(--text);
-    padding: 3px 6px;
-    border-radius: 4px;
-    font-size: 12px;
-    outline: none;
-    -webkit-app-region: no-drag;
-    max-width: 130px;
   }
 
   .search-input {

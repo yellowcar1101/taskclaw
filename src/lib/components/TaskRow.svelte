@@ -116,6 +116,13 @@
     return '';
   }
 
+  function isStartOverdue(startDate: string | null): boolean {
+    if (!startDate) return false;
+    if (startDate.includes('T')) return new Date(startDate).getTime() < Date.now();
+    return startDate < new Date().toISOString().slice(0, 10);
+  }
+  $: startOverdue = isStartOverdue(task.start_date);
+
   // Drag and drop
   let dragging = false;
   let dragOver = false;
@@ -174,11 +181,12 @@
 
   <!-- Complete checkbox -->
   <button
-    class="icon-btn check"
+    class="check-box"
+    class:start-overdue={startOverdue}
     on:click|stopPropagation={onComplete}
-    title="Complete"
+    title="Mark complete"
     tabindex="-1"
-  >○</button>
+  ></button>
 
   <!-- Caption -->
   <div class="caption-cell">
@@ -300,8 +308,22 @@
   .icon-btn.danger:hover { color: var(--red); }
   .icon-btn.invisible { visibility: hidden; }
   .icon-btn.toggle { font-size: 10px; width: 16px; text-align: center; }
-  .icon-btn.check { font-size: 12px; color: var(--text-dim); }
-  .icon-btn.check:hover { color: var(--green); }
+
+  .check-box {
+    width: 15px;
+    height: 15px;
+    border: 1.5px solid var(--text-dim);
+    border-radius: 3px;
+    background: transparent;
+    cursor: pointer;
+    flex-shrink: 0;
+    padding: 0;
+    transition: border-color 0.1s, background 0.1s;
+    margin: 0 2px;
+  }
+  .check-box:hover { border-color: var(--green); background: rgba(106,191,105,0.15); }
+  .check-box.start-overdue { border-color: var(--red); background: rgba(255,255,255,0.06); }
+  .check-box.start-overdue:hover { border-color: var(--red); background: rgba(224,92,92,0.15); }
 
   .caption-cell {
     flex: 1;
@@ -315,6 +337,7 @@
   .caption-text {
     font-family: var(--app-font);
     font-size: var(--app-font-size, 13px);
+    color: var(--task-color, var(--text));
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

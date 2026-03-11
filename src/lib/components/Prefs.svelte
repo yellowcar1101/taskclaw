@@ -2,19 +2,22 @@
   import { onMount } from 'svelte';
   import { showPrefs, flags, tags } from '../stores/tasks';
   import { api } from '../api';
+  import ColorPicker from './ColorPicker.svelte';
   import type { Flag, Tag } from '../types';
 
   let activeTab: 'flags' | 'tags' | 'app' | 'sync' | 'api' = 'flags';
   let error = '';
 
   // ── App appearance settings ──────────────────────────────────────────────────
-  const FONT_KEY    = 'app_font';
-  const SIZE_KEY    = 'app_font_size';
-  const COMPACT_KEY = 'app_compact';
+  const FONT_KEY       = 'app_font';
+  const SIZE_KEY       = 'app_font_size';
+  const COMPACT_KEY    = 'app_compact';
+  const TASK_COLOR_KEY = 'app_task_color';
 
-  let appFont = localStorage.getItem(FONT_KEY) ?? 'system';
-  let appFontSize = localStorage.getItem(SIZE_KEY) ?? '12';
-  let appCompact = localStorage.getItem(COMPACT_KEY) === 'true';
+  let appFont      = localStorage.getItem(FONT_KEY) ?? 'system';
+  let appFontSize  = localStorage.getItem(SIZE_KEY) ?? '12';
+  let appCompact   = localStorage.getItem(COMPACT_KEY) === 'true';
+  let appTaskColor = localStorage.getItem(TASK_COLOR_KEY) ?? '';
 
   function applyAppearance() {
     const root = document.documentElement;
@@ -38,17 +41,17 @@
     root.style.setProperty('--app-font', fontMap[appFont] ?? fontMap.system);
     root.style.setProperty('--app-font-size', appFontSize + 'px');
     root.style.setProperty('--row-height', appCompact ? '22px' : '28px');
+    if (appTaskColor) root.style.setProperty('--task-color', appTaskColor);
+    else root.style.removeProperty('--task-color');
     localStorage.setItem(FONT_KEY, appFont);
     localStorage.setItem(SIZE_KEY, appFontSize);
     localStorage.setItem(COMPACT_KEY, String(appCompact));
+    localStorage.setItem(TASK_COLOR_KEY, appTaskColor);
   }
 
-  // Apply on mount (load saved)
-  onMount(() => {
-    applyAppearance();
-  });
+  onMount(() => { applyAppearance(); });
 
-  $: { appFont; appFontSize; appCompact; applyAppearance(); }
+  $: { appFont; appFontSize; appCompact; appTaskColor; applyAppearance(); }
 
   // ── Folder Sync ───────────────────────────────────────────────────────────────
   let syncFolder: string | null = null;
@@ -376,6 +379,20 @@
             <input type="checkbox" bind:checked={appCompact} style="accent-color:var(--accent)" />
             Compact mode (22px rows)
           </label>
+        </div>
+
+        <div class="info-row">
+          <span class="info-label">Task text colour</span>
+          <div style="display:flex;align-items:center;gap:10px">
+            <ColorPicker
+              value={appTaskColor}
+              label="Active task font colour"
+              on:change={e => { appTaskColor = e.detail; }}
+            />
+            <span class="info-value" style="color:{appTaskColor || 'var(--text)'}">
+              Sample task text
+            </span>
+          </div>
         </div>
 
         <div class="info-row" style="margin-top:16px">
