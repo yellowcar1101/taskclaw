@@ -73,6 +73,13 @@
 
   onMount(loadSyncStatus);
 
+  async function openExternal(url: string) {
+    try {
+      const { openUrl } = await import('@tauri-apps/plugin-opener');
+      await openUrl(url);
+    } catch {}
+  }
+
   async function saveCredentials() {
     credsSaving = true;
     credsMsg = '';
@@ -482,14 +489,60 @@
           </button>
           {#if showOauthAdvanced}
             <div class="oauth-panel">
-              <div class="section-hint" style="margin-bottom:8px">
-                By default TaskClaw uses its built-in OAuth app (requires approval). To use your own
-                Google Cloud credentials: create an OAuth 2.0 Client ID of type <em>Desktop app</em> in
-                <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer"
-                   class="ext-link">Google Cloud Console</a>, enable the Drive API, and paste the values below.
-                This lets <strong>anyone</strong> connect to their own Google Drive with no whitelist restrictions.
+              <p class="oauth-intro">
+                By default TaskClaw uses a shared built-in Google app, which may require approval
+                or show a warning. You can create your own free Google Cloud project in about
+                5 minutes — this gives you full control and works with any Google account
+                (personal or work) with no restrictions.
+              </p>
+
+              <div class="oauth-steps">
+                <div class="oauth-step">
+                  <span class="step-num">1</span>
+                  <div class="step-body">
+                    <strong>Create a free Google Cloud project</strong><br>
+                    Go to <button class="step-link" on:click={() => openExternal('https://console.cloud.google.com/projectcreate')}>console.cloud.google.com/projectcreate</button>.
+                    Sign in with the Google account you want to sync to (e.g. your personal Gmail).
+                    Give the project any name — "TaskClaw Sync" works fine — then click <em>Create</em>.
+                  </div>
+                </div>
+
+                <div class="oauth-step">
+                  <span class="step-num">2</span>
+                  <div class="step-body">
+                    <strong>Enable the Google Drive API</strong><br>
+                    Open <button class="step-link" on:click={() => openExternal('https://console.cloud.google.com/apis/library/drive.googleapis.com')}>APIs &amp; Services → Library → Google Drive API</button>
+                    and click the blue <em>Enable</em> button. This takes a few seconds.
+                  </div>
+                </div>
+
+                <div class="oauth-step">
+                  <span class="step-num">3</span>
+                  <div class="step-body">
+                    <strong>Configure the OAuth consent screen</strong><br>
+                    Go to <button class="step-link" on:click={() => openExternal('https://console.cloud.google.com/apis/credentials/consent')}>APIs &amp; Services → OAuth consent screen</button>.
+                    Choose <em>External</em>, click <em>Create</em>. Fill in only the required fields:
+                    App name (e.g. "TaskClaw"), your email as support contact, your email again
+                    as developer contact. Click <em>Save and Continue</em> through the remaining
+                    screens (no scopes or test users needed). On the last screen click <em>Back to Dashboard</em>.
+                  </div>
+                </div>
+
+                <div class="oauth-step">
+                  <span class="step-num">4</span>
+                  <div class="step-body">
+                    <strong>Create OAuth credentials</strong><br>
+                    Go to <button class="step-link" on:click={() => openExternal('https://console.cloud.google.com/apis/credentials')}>APIs &amp; Services → Credentials</button>.
+                    Click <em>+ Create Credentials</em> → <em>OAuth client ID</em>.
+                    For Application type choose <em>Desktop app</em>, give it any name, click <em>Create</em>.<br><br>
+                    A popup appears with your <strong>Client ID</strong> and <strong>Client Secret</strong>.
+                    Copy them and paste below. You can also download the JSON file and find the values
+                    inside it as <code>client_id</code> and <code>client_secret</code>.
+                  </div>
+                </div>
               </div>
-              <div class="info-row">
+
+              <div class="info-row" style="margin-top:12px">
                 <span class="info-label">Client ID</span>
                 <input class="name-input" style="flex:1" placeholder="…apps.googleusercontent.com"
                   bind:value={oauthClientId} />
@@ -835,5 +888,66 @@
     border-radius: 3px;
     padding: 1px 5px;
   }
-  .ext-link { color: var(--accent); }
+
+  .oauth-intro {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin: 0 0 12px 0;
+    line-height: 1.5;
+  }
+
+  .oauth-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .oauth-step {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .step-num {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .step-body {
+    font-size: 11px;
+    color: var(--text-dim);
+    line-height: 1.6;
+    flex: 1;
+  }
+
+  .step-body strong { color: var(--text); }
+  .step-body code {
+    background: var(--hover-btn);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0 3px;
+    font-size: 10px;
+  }
+
+  .step-link {
+    background: none;
+    border: none;
+    color: var(--accent);
+    cursor: pointer;
+    font-size: 11px;
+    padding: 0;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .step-link:hover { opacity: 0.8; }
 </style>
