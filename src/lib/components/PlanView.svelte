@@ -64,54 +64,134 @@
     return startDate < new Date().toISOString().slice(0, 10);
   }
 
-  // ── Column visibility ──────────────────────────────────────────────────────
-  const COL_KEY = 'plan_visible_cols';
+  // ── Column visibility / order / widths ───────────────────────────────────
+  const ALL_COLS = [
+    { id: 'due',   label: 'Due',   defaultWidth: 80, center: false },
+    { id: 'start', label: 'Start', defaultWidth: 70, center: false },
+    { id: 'flag',  label: 'Flag',  defaultWidth: 30, center: true  },
+    { id: 'tags',  label: 'Tags',  defaultWidth: 52, center: true  },
+  ];
+
+  // Visibility
+  const COL_VIS_KEY = 'plan_visible_cols';
   function loadCols(): Set<string> {
-    try { return new Set(JSON.parse(localStorage.getItem(COL_KEY) ?? '["due","start"]')); }
+    try { return new Set(JSON.parse(localStorage.getItem(COL_VIS_KEY) ?? '["due","start"]')); }
     catch { return new Set(['due', 'start']); }
   }
   let visibleCols = writable<Set<string>>(loadCols());
-  visibleCols.subscribe(v => localStorage.setItem(COL_KEY, JSON.stringify([...v])));
+  visibleCols.subscribe(v => localStorage.setItem(COL_VIS_KEY, JSON.stringify([...v])));
 
-  const ALL_COLS = [
-    { id: 'due',   label: 'Due Date' },
-    { id: 'start', label: 'Start Date' },
-    { id: 'flag',  label: 'Flag' },
-    { id: 'tags',  label: 'Tags' },
-  ];
+  // Order
+  const COL_ORDER_KEY = 'plan_col_order';
+  function loadOrder(): string[] {
+    try {
+      const saved: string[] = JSON.parse(localStorage.getItem(COL_ORDER_KEY) ?? '[]');
+      const ids = ALL_COLS.map(c => c.id);
+      const merged = saved.filter(id => ids.includes(id));
+      ids.forEach(id => { if (!merged.includes(id)) merged.push(id); });
+      return merged;
+    } catch { return ALL_COLS.map(c => c.id); }
+  }
+  let colOrder = writable<string[]>(loadOrder());
+  colOrder.subscribe(v => localStorage.setItem(COL_ORDER_KEY, JSON.stringify(v)));
+
+  // Widths
+  const COL_WIDTH_KEY = 'plan_col_widths';
+  const DEFAULT_WIDTHS = Object.fromEntries(ALL_COLS.map(c => [c.id, c.defaultWidth]));
+  function loadWidths(): Record<string, number> {
+    try { return { ...DEFAULT_WIDTHS, ...JSON.parse(localStorage.getItem(COL_WIDTH_KEY) ?? '{}') }; }
+    catch { return { ...DEFAULT_WIDTHS }; }
+  }
+  let colWidths = writable<Record<string, number>>(loadWidths());
+  colWidths.subscribe(v => localStorage.setItem(COL_WIDTH_KEY, JSON.stringify(v)));
+
+  $: orderedVisibleCols = $colOrder
+    .map(id => ALL_COLS.find(c => c.id === id)!)
+    .filter(c => c && $visibleCols.has(c.id));
+
+  $: colVarsCss = orderedVisibleCols
+    .map((c, i) => `--col-${c.id}-width:${$colWidths[c.id] ?? c.defaultWidth}px;--col-${c.id}-order:${i + 10}`)
+    .join(';');
+
+  // Right-click context menu (visibility toggle)
   let colMenu: { x: number; y: number } | null = null;
-
-  function onHeaderContextMenu(e: MouseEvent) {
-    e.preventDefault();
-    colMenu = { x: e.clientX, y: e.clientY };
-  }
-
+  function onHeaderContextMenu(e: MouseEvent) { e.preventDefault(); colMenu = { x: e.clientX, y: e.clientY }; }
   function toggleCol(id: string) {
-    visibleCols.update(s => {
-      const n = new Set(s);
-      n.has(id) ? n.delete(id) : n.add(id);
-      return n;
-    });
+    visibleCols.update(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   }
+
+  // ── Column resize ─────────────────────────────────────────────────────────
+  let isResizing = false;
+  function onResizeStart(e: MouseEvent, id: string) {
+    e.preventDefault(); e.stopPropagation();
+    isResizing = true;
+    const startX = e.clientX;
+    const startW = $colWidths[id] ?? DEFAULT_WIDTHS[id] ?? 60;
+    function onMove(e: MouseEvent) {
+      colWidths.update(m => ({ ...m, [id]: Math.max(30, startW + e.clientX - startX) }));
+    }
+    function onUp() {
+      isResizing = false;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  // ── Column drag-to-reorder ────────────────────────────────────────────────
+  let dragColId: string | null = null;
+  let dragOverColId: string | null = null;
+  function onColDragStart(e: DragEvent, id: string) {
+    if (isResizing) { e.preventDefault(); return; }
+    dragColId = id; e.dataTransfer!.effectAllowed = 'move';
+  }
+  function onColDragOver(e: DragEvent, id: string) {
+    e.preventDefault(); if (dragColId && dragColId !== id) dragOverColId = id;
+  }
+  function onColDragLeave() { dragOverColId = null; }
+  function onColDrop(e: DragEvent, targetId: string) {
+    e.preventDefault();
+    if (dragColId && dragColId !== targetId) {
+      colOrder.update(order => {
+        const arr = [...order];
+        const from = arr.indexOf(dragColId!), to = arr.indexOf(targetId);
+        if (from !== -1 && to !== -1) { arr.splice(from, 1); arr.splice(to, 0, dragColId!); }
+        return arr;
+      });
+    }
+    dragColId = null; dragOverColId = null;
+  }
+  function onColDragEnd() { dragColId = null; dragOverColId = null; }
 </script>
 
 <div class="plan-view">
-  <!-- Column headers — right-click to toggle columns -->
-  <div class="col-headers" on:contextmenu={onHeaderContextMenu} role="none">
+  <!-- Column headers — right-click to toggle, drag to reorder, drag edge to resize -->
+  <div class="col-headers" class:col-resizing={isResizing} on:contextmenu={onHeaderContextMenu} role="none">
     <div class="col-spacer"></div>
     <div class="col-header caption-col">Task</div>
-    {#if $visibleCols.has('due')}
-      <div class="col-header due-col">Due</div>
-    {/if}
-    {#if $visibleCols.has('start')}
-      <div class="col-header start-col">Start</div>
-    {/if}
-    {#if $visibleCols.has('flag')}
-      <div class="col-header flag-col">Flag</div>
-    {/if}
-    {#if $visibleCols.has('tags')}
-      <div class="col-header tags-col">Tags</div>
-    {/if}
+
+    {#each orderedVisibleCols as col (col.id)}
+      <div
+        class="col-header resizable"
+        class:center={col.center}
+        class:drag-over={dragOverColId === col.id}
+        style="width:{$colWidths[col.id] ?? col.defaultWidth}px"
+        draggable={true}
+        on:dragstart={e => onColDragStart(e, col.id)}
+        on:dragover={e => onColDragOver(e, col.id)}
+        on:dragleave={onColDragLeave}
+        on:drop={e => onColDrop(e, col.id)}
+        on:dragend={onColDragEnd}
+        role="columnheader"
+        tabindex="-1"
+        title="Drag to reorder"
+      >
+        <span class="col-label">{col.label}</span>
+        <div class="resize-handle" on:mousedown={e => onResizeStart(e, col.id)}></div>
+      </div>
+    {/each}
+
     <div class="col-hint" title="Right-click to show/hide columns">⋮</div>
   </div>
 
@@ -137,7 +217,7 @@
     {/if}
   </div>
 
-  <div class="plan-list">
+  <div class="plan-list" style={colVarsCss}>
     {#each groups as group (group.key)}
       <!-- Group header (only when grouped) -->
       {#if group.label}
@@ -248,28 +328,53 @@
   .col-headers {
     display: flex;
     align-items: center;
-    gap: 4px;
     padding: 0 6px;
     height: 22px;
     background: var(--surface-elevated);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
     user-select: none;
-    cursor: default;
   }
+  .col-headers.col-resizing { cursor: col-resize; }
   .col-spacer { width: 28px; flex-shrink: 0; }
+
   .col-header {
     color: var(--text-dim);
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    padding: 0 2px;
+    display: flex;
+    align-items: center;
+    position: relative;
+    flex-shrink: 0;
+    overflow: visible;
   }
-  .col-header.caption-col { flex: 1; }
-  .col-header.due-col     { width: 80px; flex-shrink: 0; text-align: right; }
-  .col-header.start-col   { width: 70px; flex-shrink: 0; text-align: right; }
-  .col-header.flag-col    { width: 30px; flex-shrink: 0; text-align: center; }
-  .col-header.tags-col    { width: 52px; flex-shrink: 0; text-align: center; }
+  .col-header.caption-col { flex: 1; padding: 0 2px; }
+  .col-header.resizable { cursor: grab; }
+  .col-header.resizable:hover { color: var(--text); background: var(--hover); }
+  .col-header.resizable.drag-over { border-left: 2px solid var(--accent); }
+  .col-header.center { justify-content: center; }
+
+  .col-label {
+    padding: 0 4px;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .resize-handle {
+    position: absolute;
+    right: -2px;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    cursor: col-resize;
+    z-index: 2;
+    border-radius: 3px;
+  }
+  .resize-handle:hover { background: var(--accent); opacity: 0.5; }
+
   .col-hint {
     color: var(--text-dim);
     font-size: 13px;
@@ -432,11 +537,12 @@
     flex-shrink: 0;
   }
 
-  /* ── Column cells ── */
+  /* ── Column cells — widths + order from CSS vars on .plan-list ── */
   .col-due {
     font-size: 11px;
     color: var(--text-dim);
-    width: 80px;
+    width: var(--col-due-width, 80px);
+    order: var(--col-due-order, 10);
     text-align: right;
     flex-shrink: 0;
   }
@@ -447,20 +553,23 @@
   .col-start {
     font-size: 11px;
     color: var(--text-dim);
-    width: 70px;
+    width: var(--col-start-width, 70px);
+    order: var(--col-start-order, 11);
     text-align: right;
     flex-shrink: 0;
   }
 
   .col-flag {
-    width: 30px;
+    width: var(--col-flag-width, 30px);
+    order: var(--col-flag-order, 12);
     flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: center;
   }
   .col-tags {
-    width: 52px;
+    width: var(--col-tags-width, 52px);
+    order: var(--col-tags-order, 13);
     flex-shrink: 0;
     display: flex;
     align-items: center;

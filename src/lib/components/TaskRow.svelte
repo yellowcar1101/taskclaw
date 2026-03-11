@@ -374,10 +374,13 @@
     flex-shrink: 0;
   }
 
+  /* Column cells — widths and order driven by CSS variables set on the
+     task-list container by TaskTree (so resize/reorder only needs parent update) */
   .col-due {
     font-size: 11px;
     color: var(--text-dim);
-    width: 80px;
+    width: var(--col-due-width, 80px);
+    order: var(--col-due-order, 10);
     text-align: right;
     flex-shrink: 0;
   }
@@ -388,20 +391,23 @@
   .col-start {
     font-size: 11px;
     color: var(--text-dim);
-    width: 70px;
+    width: var(--col-start-width, 70px);
+    order: var(--col-start-order, 11);
     text-align: right;
     flex-shrink: 0;
   }
 
   .col-flag {
-    width: 30px;
+    width: var(--col-flag-width, 30px);
+    order: var(--col-flag-order, 12);
     flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: center;
   }
   .col-tags {
-    width: 52px;
+    width: var(--col-tags-width, 52px);
+    order: var(--col-tags-order, 13);
     flex-shrink: 0;
     display: flex;
     align-items: center;

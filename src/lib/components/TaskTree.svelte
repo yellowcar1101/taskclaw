@@ -110,29 +110,114 @@
     }
   }
 
-  // ── Column visibility ─────────────────────────────────────────────────────
-  const COL_KEY = 'visible_cols';
+  // ── Column visibility / order / widths ───────────────────────────────────
+  const ALL_COLS = [
+    { id: 'due',   label: 'Due',   sortKey: 'due_date',   defaultWidth: 80,  center: false },
+    { id: 'start', label: 'Start', sortKey: 'start_date', defaultWidth: 70,  center: false },
+    { id: 'flag',  label: 'Flag',  sortKey: null,         defaultWidth: 30,  center: true  },
+    { id: 'tags',  label: 'Tags',  sortKey: null,         defaultWidth: 52,  center: true  },
+  ];
+
+  // Visibility
+  const COL_VIS_KEY = 'visible_cols';
   function loadCols(): Set<string> {
-    try { return new Set(JSON.parse(localStorage.getItem(COL_KEY) ?? '["due","start"]')); }
+    try { return new Set(JSON.parse(localStorage.getItem(COL_VIS_KEY) ?? '["due","start"]')); }
     catch { return new Set(['due', 'start']); }
   }
   let visibleCols = writable<Set<string>>(loadCols());
-  visibleCols.subscribe(v => localStorage.setItem(COL_KEY, JSON.stringify([...v])));
+  visibleCols.subscribe(v => localStorage.setItem(COL_VIS_KEY, JSON.stringify([...v])));
 
-  let showColMenu = false;
-  const ALL_COLS = [
-    { id: 'due',   label: 'Due Date' },
-    { id: 'start', label: 'Start Date' },
-    { id: 'flag',  label: 'Flag' },
-    { id: 'tags',  label: 'Tags' },
-  ];
-  function toggleCol(id: string) {
-    visibleCols.update(s => {
-      const n = new Set(s);
-      n.has(id) ? n.delete(id) : n.add(id);
-      return n;
-    });
+  // Order
+  const COL_ORDER_KEY = 'outline_col_order';
+  function loadOrder(): string[] {
+    try {
+      const saved: string[] = JSON.parse(localStorage.getItem(COL_ORDER_KEY) ?? '[]');
+      const ids = ALL_COLS.map(c => c.id);
+      const merged = saved.filter(id => ids.includes(id));
+      ids.forEach(id => { if (!merged.includes(id)) merged.push(id); });
+      return merged;
+    } catch { return ALL_COLS.map(c => c.id); }
   }
+  let colOrder = writable<string[]>(loadOrder());
+  colOrder.subscribe(v => localStorage.setItem(COL_ORDER_KEY, JSON.stringify(v)));
+
+  // Widths
+  const COL_WIDTH_KEY = 'outline_col_widths';
+  const DEFAULT_WIDTHS = Object.fromEntries(ALL_COLS.map(c => [c.id, c.defaultWidth]));
+  function loadWidths(): Record<string, number> {
+    try { return { ...DEFAULT_WIDTHS, ...JSON.parse(localStorage.getItem(COL_WIDTH_KEY) ?? '{}') }; }
+    catch { return { ...DEFAULT_WIDTHS }; }
+  }
+  let colWidths = writable<Record<string, number>>(loadWidths());
+  colWidths.subscribe(v => localStorage.setItem(COL_WIDTH_KEY, JSON.stringify(v)));
+
+  // Derived: visible cols in current order
+  $: orderedVisibleCols = $colOrder
+    .map(id => ALL_COLS.find(c => c.id === id)!)
+    .filter(c => c && $visibleCols.has(c.id));
+
+  // CSS vars string for the task-list container (widths + flex order)
+  $: colVarsCss = orderedVisibleCols
+    .map((c, i) => `--col-${c.id}-width:${$colWidths[c.id] ?? c.defaultWidth}px;--col-${c.id}-order:${i + 10}`)
+    .join(';');
+
+  // ── Column visibility toggle ──
+  let showColMenu = false;
+  function toggleCol(id: string) {
+    visibleCols.update(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
+
+  // ── Column resize ─────────────────────────────────────────────────────────
+  let isResizing = false;
+
+  function onResizeStart(e: MouseEvent, id: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    isResizing = true;
+    const startX = e.clientX;
+    const startW = $colWidths[id] ?? DEFAULT_WIDTHS[id] ?? 60;
+
+    function onMove(e: MouseEvent) {
+      const w = Math.max(30, startW + e.clientX - startX);
+      colWidths.update(m => ({ ...m, [id]: w }));
+    }
+    function onUp() {
+      isResizing = false;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  // ── Column drag-to-reorder ────────────────────────────────────────────────
+  let dragColId: string | null = null;
+  let dragOverColId: string | null = null;
+
+  function onColDragStart(e: DragEvent, id: string) {
+    if (isResizing) { e.preventDefault(); return; }
+    dragColId = id;
+    e.dataTransfer!.effectAllowed = 'move';
+  }
+  function onColDragOver(e: DragEvent, id: string) {
+    e.preventDefault();
+    if (dragColId && dragColId !== id) dragOverColId = id;
+  }
+  function onColDragLeave() { dragOverColId = null; }
+  function onColDrop(e: DragEvent, targetId: string) {
+    e.preventDefault();
+    if (dragColId && dragColId !== targetId) {
+      colOrder.update(order => {
+        const arr = [...order];
+        const from = arr.indexOf(dragColId!);
+        const to   = arr.indexOf(targetId);
+        if (from !== -1 && to !== -1) { arr.splice(from, 1); arr.splice(to, 0, dragColId!); }
+        return arr;
+      });
+    }
+    dragColId = null; dragOverColId = null;
+  }
+  function onColDragEnd() { dragColId = null; dragOverColId = null; }
 </script>
 
 <svelte:window on:keydown={onGlobalKeydown} />
@@ -182,34 +267,44 @@
 {/if}
 
 <!-- Column headers -->
-<div class="col-headers">
+<div class="col-headers" class:col-resizing={isResizing}>
   <div class="col-spacer"></div>
   <button class="col-header caption-col" on:click={() => toggleSort('caption')}>
     Task
     {#if $sortField === 'caption'}<span class="sort-arrow">{$sortDir === 'asc' ? '↑' : '↓'}</span>{/if}
   </button>
-  {#if $visibleCols.has('due')}
-    <button class="col-header due-col" on:click={() => toggleSort('due_date')}>
-      Due
-      {#if $sortField === 'due_date'}<span class="sort-arrow">{$sortDir === 'asc' ? '↑' : '↓'}</span>{/if}
-    </button>
-  {/if}
-  {#if $visibleCols.has('start')}
-    <button class="col-header start-col" on:click={() => toggleSort('start_date')}>
-      Start
-      {#if $sortField === 'start_date'}<span class="sort-arrow">{$sortDir === 'asc' ? '↑' : '↓'}</span>{/if}
-    </button>
-  {/if}
-  {#if $visibleCols.has('flag')}
-    <div class="col-header flag-col">Flag</div>
-  {/if}
-  {#if $visibleCols.has('tags')}
-    <div class="col-header tags-col">Tags</div>
-  {/if}
+
+  {#each orderedVisibleCols as col (col.id)}
+    <div
+      class="col-header resizable"
+      class:center={col.center}
+      class:drag-over={dragOverColId === col.id}
+      style="width:{$colWidths[col.id] ?? col.defaultWidth}px"
+      draggable={true}
+      on:dragstart={e => onColDragStart(e, col.id)}
+      on:dragover={e => onColDragOver(e, col.id)}
+      on:dragleave={onColDragLeave}
+      on:drop={e => onColDrop(e, col.id)}
+      on:dragend={onColDragEnd}
+      role="columnheader"
+      tabindex="-1"
+      title="Drag to reorder"
+    >
+      {#if col.sortKey}
+        <button class="sort-inner" on:click={() => toggleSort(col.sortKey!)}>
+          {col.label}
+          {#if $sortField === col.sortKey}<span class="sort-arrow">{$sortDir === 'asc' ? '↑' : '↓'}</span>{/if}
+        </button>
+      {:else}
+        <span class="col-label">{col.label}</span>
+      {/if}
+      <div class="resize-handle" on:mousedown={e => onResizeStart(e, col.id)}></div>
+    </div>
+  {/each}
 </div>
 
-<!-- Task list -->
-<div class="task-list" role="none">
+<!-- Task list (CSS vars drive column widths + order in rows) -->
+<div class="task-list" role="none" style={colVarsCss}>
   {#each $rootTasks as task (task.id)}
     <TaskRow task={task} depth={0} siblings={$rootTasks} visibleCols={$visibleCols} />
   {/each}
@@ -283,14 +378,17 @@
   .col-headers {
     display: flex;
     align-items: center;
-    gap: 4px;
     padding: 0 6px;
     height: 22px;
     background: var(--surface-elevated);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
+    user-select: none;
   }
+  .col-headers.col-resizing { cursor: col-resize; }
+
   .col-spacer { width: 46px; flex-shrink: 0; }
+
   .col-header {
     background: none;
     border: none;
@@ -298,22 +396,68 @@
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    border-radius: 3px;
+    position: relative;
+    flex-shrink: 0;
+    transition: color 0.1s;
+    overflow: visible;
+  }
+  .col-header.caption-col {
+    flex: 1;
     cursor: pointer;
-    padding: 0 2px;
-    text-align: left;
+    padding: 0 4px;
+    gap: 3px;
+  }
+  .col-header.caption-col:hover { color: var(--text); background: var(--hover); }
+
+  /* Resizable column headers */
+  .col-header.resizable { cursor: grab; }
+  .col-header.resizable:hover { color: var(--text); background: var(--hover); }
+  .col-header.resizable.drag-over { border-left: 2px solid var(--accent); }
+  .col-header.center { justify-content: center; }
+
+  /* Sort button inside resizable header */
+  .sort-inner {
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    padding: 0 4px;
+    height: 100%;
     display: flex;
     align-items: center;
     gap: 3px;
-    border-radius: 3px;
-    transition: color 0.1s, background 0.1s;
+    flex: 1;
+    min-width: 0;
   }
-  .col-header:hover { color: var(--text); background: var(--hover); }
-  .col-header.caption-col { flex: 1; }
-  .col-header.due-col     { width: 80px; flex-shrink: 0; }
-  .col-header.start-col   { width: 70px; flex-shrink: 0; }
-  .col-header.flag-col    { width: 30px; flex-shrink: 0; text-align: center; justify-content: center; }
-  .col-header.tags-col    { width: 52px; flex-shrink: 0; text-align: center; justify-content: center; }
+  .col-label {
+    padding: 0 4px;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .sort-arrow { color: var(--accent); font-size: 10px; }
+
+  /* Resize handle — right edge of each resizable header */
+  .resize-handle {
+    position: absolute;
+    right: -2px;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    cursor: col-resize;
+    z-index: 2;
+    border-radius: 3px;
+  }
+  .resize-handle:hover { background: var(--accent); opacity: 0.5; }
 
   .task-list {
     flex: 1;
