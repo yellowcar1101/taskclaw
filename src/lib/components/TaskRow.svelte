@@ -218,6 +218,11 @@
       {/each}
     {/if}
 
+    <!-- Recurrence indicator -->
+    {#if task.recurrence_rule}
+      <span class="recur-badge" title="Recurring">↻</span>
+    {/if}
+
     <!-- Email link indicators -->
     {#each task.email_links as link}
       <span class="email-badge" title={link.subject ?? 'Email link'}>✉</span>
@@ -365,6 +370,13 @@
     border-radius: 10px;
     border: 1px solid;
     white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .recur-badge {
+    font-size: 11px;
+    color: var(--accent);
+    opacity: 0.7;
     flex-shrink: 0;
   }
 

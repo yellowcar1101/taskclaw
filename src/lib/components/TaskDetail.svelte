@@ -4,6 +4,7 @@
   import { api } from '../api';
   import type { Task } from '../types';
   import { parseCaption } from '../parsing';
+  import RecurrenceDialog from './RecurrenceDialog.svelte';
 
   $: task = $detailTaskId ? $taskById.get($detailTaskId) ?? null : null;
 
@@ -187,6 +188,43 @@
     d.setDate(d.getDate() + n);
     startDateVal = d.toISOString().split('T')[0];
     saveStartDate();
+  }
+
+  // ── Recurrence ──────────────────────────────────────────────────────────────
+  let showRecurrenceDialog = false;
+
+  function recurrenceSummary(ruleStr: string | null): string {
+    if (!ruleStr) return '';
+    try {
+      const r = JSON.parse(ruleStr);
+      const interval = r.interval ?? 1;
+      const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+      const NTH = ['','1st','2nd','3rd','4th','5th'];
+      const MONTHS = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      let s = `Every ${interval > 1 ? interval + ' ' : ''}`;
+      if (r.freq === 'daily')   s += interval === 1 ? 'day' : 'days';
+      if (r.freq === 'weekly') {
+        s += interval === 1 ? 'week' : 'weeks';
+        if (r.days_of_week?.length) s += ' on ' + r.days_of_week.map((d: number) => DAYS[d]).join(', ');
+      }
+      if (r.freq === 'monthly') {
+        s += interval === 1 ? 'month' : 'months';
+        if (r.day_of_month)  s += `, day ${r.day_of_month}`;
+        if (r.nth_weekday)   s += `, ${NTH[r.nth_weekday.n]} ${DAYS[r.nth_weekday.day]}`;
+      }
+      if (r.freq === 'yearly') {
+        s += interval === 1 ? 'year' : 'years';
+        if (r.month) s += ' in ' + MONTHS[r.month];
+      }
+      if (r.regenerate) s += ' (regenerate)';
+      return s;
+    } catch { return 'Recurring'; }
+  }
+
+  async function saveRecurrence(e: CustomEvent<{ rule: string | null }>) {
+    if (!task) return;
+    showRecurrenceDialog = false;
+    await updateTask(task.id, { recurrence_rule: e.detail.rule ?? '' });
   }
 
   // ── Format section ──────────────────────────────────────────────────────────
@@ -404,9 +442,12 @@
             </div>
           {/if}
 
-          <button class="recurrence-btn" disabled title="Recurrence coming soon">
-            ↺ Recurrence…
+          <button class="recurrence-btn" on:click={() => showRecurrenceDialog = true}>
+            ↺ {task?.recurrence_rule ? 'Edit recurrence' : 'Recurrence…'}
           </button>
+          {#if task?.recurrence_rule}
+            <div class="recurrence-summary">{recurrenceSummary(task.recurrence_rule)}</div>
+          {/if}
         </div>
       {/if}
     </div>
@@ -457,6 +498,14 @@
 
   </div>
 </div>
+{/if}
+
+{#if showRecurrenceDialog && task}
+  <RecurrenceDialog
+    rule={task.recurrence_rule}
+    on:save={saveRecurrence}
+    on:cancel={() => showRecurrenceDialog = false}
+  />
 {/if}
 
 <style>
@@ -734,8 +783,14 @@
     border-radius: 3px;
     cursor: pointer;
   }
-  .recurrence-btn:not(:disabled):hover { color: var(--accent); border-color: var(--accent); }
-  .recurrence-btn:disabled { opacity: 0.4; cursor: default; }
+  .recurrence-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+  .recurrence-summary {
+    font-size: 11px;
+    color: var(--accent);
+    margin-top: 3px;
+    padding-left: 2px;
+  }
 
   /* Format */
   .fmt-row {
