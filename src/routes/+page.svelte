@@ -48,104 +48,26 @@
     ready = true;
   });
 
-  // Current view (null = outline)
-  $: currentView = $activeTabId === 'outline'
-    ? null
-    : $views.find(v => v.id === $activeTabId) ?? null;
-
-  // Views dropdown
-  let showViewDropdown = false;
-
-  function selectView(id: string) {
-    activeTabId.set(id);
-    showViewDropdown = false;
-  }
-
-  function onGlobalKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') showViewDropdown = false;
+  async function addView() {
+    const { api } = await import('$lib/api');
+    const v = await api.createView({
+      name: 'New View', show_completed: false, group_by: 'none',
+      sort_by: 'position', sort_dir: 'asc', visible_fields: [],
+      filter_json: '{"action_filter":"active"}'
+    });
+    views.update(arr => [...arr, v]);
+    activeTabId.set(v.id);
+    editingViewId.set(v.id);
   }
 </script>
-
-<svelte:window on:keydown={onGlobalKeydown} />
 
 <div class="app-shell">
   <!-- Titlebar -->
   <header class="titlebar">
     <span class="app-name">TaskClaw</span>
-
-    <!-- View selector -->
+    <div class="spacer"></div>
     {#if ready}
-      <div class="view-selector" style="position:relative">
-        <button
-          class="view-btn"
-          class:active={showViewDropdown}
-          on:click={() => showViewDropdown = !showViewDropdown}
-        >
-          {currentView ? currentView.name : 'Outline'} ▾
-        </button>
-        {#if showViewDropdown}
-          <div class="view-dropdown" role="listbox">
-            <!-- Built-in -->
-            <div
-              class="view-opt"
-              class:selected={$activeTabId === 'outline'}
-              on:click={() => selectView('outline')}
-              role="option" tabindex="0" on:keydown
-            >☰ Outline</div>
-            <div
-              class="view-opt"
-              class:selected={$activeTabId === '__starred__'}
-              on:click={() => selectView('__starred__')}
-              role="option" tabindex="0" on:keydown
-            >⭐ Starred</div>
-            <div
-              class="view-opt"
-              class:selected={$activeTabId === '__today__'}
-              on:click={() => selectView('__today__')}
-              role="option" tabindex="0" on:keydown
-            >◷ Due Today</div>
-
-            {#if $views.length}
-              <div class="view-sep"></div>
-              {#each $views as view (view.id)}
-                <div class="view-opt-row">
-                  <div
-                    class="view-opt flex1"
-                    class:selected={$activeTabId === view.id}
-                    on:click={() => selectView(view.id)}
-                    role="option" tabindex="0" on:keydown
-                  >{view.name}</div>
-                  <button
-                    class="view-gear"
-                    on:click|stopPropagation={() => { editingViewId.set(view.id); showViewDropdown = false; }}
-                    title="View settings"
-                  >⚙</button>
-                </div>
-              {/each}
-            {/if}
-
-            <div class="view-sep"></div>
-            <div
-              class="view-opt new-view"
-              on:click={async () => {
-                showViewDropdown = false;
-                const { api } = await import('$lib/api');
-                const v = await api.createView({
-                  name: 'New View', show_completed: false, group_by: 'none',
-                  sort_by: 'position', sort_dir: 'asc', visible_fields: [],
-                  filter_json: '{"action_filter":"active"}'
-                });
-                const { views: vs } = await import('$lib/stores/tasks');
-                vs.update(arr => [...arr, v]);
-                editingViewId.set(v.id);
-              }}
-              role="option" tabindex="0" on:keydown
-            >+ New View…</div>
-          </div>
-        {/if}
-      </div>
-
-      <!-- Flag filter (moved from sidebar) -->
+      <!-- Flag filter -->
       <select class="flag-filter" bind:value={$filterFlagId}>
         <option value={null}>All flags</option>
         <option value="__starred__">⭐ Starred</option>
@@ -156,16 +78,49 @@
       </select>
 
       <!-- Search -->
-      <input
-        class="search-input"
-        placeholder="Search…"
-        bind:value={$searchQuery}
-      />
+      <input class="search-input" placeholder="Search…" bind:value={$searchQuery} />
     {/if}
-
-    <div class="spacer"></div>
     <button class="titlebar-btn" on:click={() => showPrefs.set(true)} title="Preferences">⚙ Prefs</button>
   </header>
+
+  <!-- View tabs -->
+  {#if ready}
+    <nav class="view-tabs">
+      <button
+        class="vtab" class:active={$activeTabId === 'outline'}
+        on:click={() => activeTabId.set('outline')}
+        tabindex="-1"
+      >☰ Outline</button>
+      <button
+        class="vtab" class:active={$activeTabId === '__starred__'}
+        on:click={() => activeTabId.set('__starred__')}
+        tabindex="-1"
+      >⭐ Starred</button>
+      <button
+        class="vtab" class:active={$activeTabId === '__today__'}
+        on:click={() => activeTabId.set('__today__')}
+        tabindex="-1"
+      >◷ Today</button>
+
+      {#each $views as view (view.id)}
+        <div class="vtab-wrap" class:active={$activeTabId === view.id}>
+          <button
+            class="vtab" class:active={$activeTabId === view.id}
+            on:click={() => activeTabId.set(view.id)}
+            tabindex="-1"
+          >{view.name}</button>
+          <button
+            class="vtab-gear"
+            on:click|stopPropagation={() => editingViewId.set(view.id)}
+            title="View settings"
+            tabindex="-1"
+          >⚙</button>
+        </div>
+      {/each}
+
+      <button class="vtab vtab-add" on:click={addView} tabindex="-1" title="New view">+</button>
+    </nav>
+  {/if}
 
   <!-- Main area -->
   <div class="main-area">
@@ -248,68 +203,64 @@
     flex-shrink: 0;
   }
 
-  .view-selector { -webkit-app-region: no-drag; }
-
-  .view-btn {
-    background: var(--hover-btn);
-    border: 1px solid var(--border);
-    color: var(--text);
-    padding: 3px 10px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 12px;
-    transition: border-color 0.1s;
-    white-space: nowrap;
-  }
-  .view-btn:hover, .view-btn.active { border-color: var(--accent); }
-
-  .view-dropdown {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
-    min-width: 200px;
-    background: var(--surface-elevated);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-    z-index: 900;
-    padding: 4px 0;
-  }
-
-  .view-opt {
-    padding: 6px 12px;
-    font-size: 12px;
-    color: var(--text-dim);
-    cursor: pointer;
-    border-radius: 3px;
-    margin: 0 4px;
-  }
-  .view-opt:hover { background: var(--hover); color: var(--text); }
-  .view-opt.selected { color: var(--accent); }
-  .view-opt.new-view { color: var(--accent); font-weight: 500; }
-  .view-opt.flex1 { flex: 1; }
-
-  .view-opt-row {
+  /* ── View tabs ── */
+  .view-tabs {
     display: flex;
-    align-items: center;
-    margin: 0 4px;
-    border-radius: 3px;
+    align-items: stretch;
+    gap: 0;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
   }
-  .view-opt-row:hover { background: var(--hover); }
-  .view-opt-row .view-opt { margin: 0; border-radius: 0; }
+  .view-tabs::-webkit-scrollbar { display: none; }
 
-  .view-gear {
+  .vtab {
     background: none;
     border: none;
+    border-bottom: 2px solid transparent;
     color: var(--text-dim);
+    padding: 5px 14px;
+    font-size: 12px;
     cursor: pointer;
-    padding: 0 8px;
-    font-size: 11px;
+    white-space: nowrap;
     flex-shrink: 0;
+    transition: color 0.1s;
+    margin-bottom: -1px;
   }
-  .view-gear:hover { color: var(--accent); }
+  .vtab:hover { color: var(--text); background: var(--hover); }
+  .vtab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
-  .view-sep { height: 1px; background: var(--border); margin: 3px 0; }
+  .vtab-wrap {
+    display: flex;
+    align-items: stretch;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .vtab-wrap.active { border-bottom-color: var(--accent); }
+  .vtab-wrap .vtab { border-bottom: none; margin-bottom: 0; padding-right: 6px; }
+  .vtab-wrap:hover { background: var(--hover); }
+
+  .vtab-gear {
+    background: none;
+    border: none;
+    color: transparent;
+    cursor: pointer;
+    font-size: 10px;
+    padding: 0 6px 0 2px;
+    flex-shrink: 0;
+    transition: color 0.1s;
+  }
+  .vtab-wrap:hover .vtab-gear { color: var(--text-dim); }
+  .vtab-wrap.active .vtab-gear { color: var(--text-dim); }
+  .vtab-gear:hover { color: var(--accent) !important; }
+
+  .vtab-add {
+    padding: 5px 12px;
+    font-size: 14px;
+    color: var(--text-dim);
+  }
 
   .flag-filter {
     background: var(--input-bg);

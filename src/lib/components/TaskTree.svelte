@@ -139,24 +139,24 @@
 
 <!-- Toolbar -->
 <div class="tree-toolbar">
-  <button class="tb-btn primary" on:click={addRootTask}>+ Task</button>
-  <button class="tb-btn" on:click={() => showRapidInput.set(true)} title="Rapid Input (Ctrl+Shift+I)">📋 Rapid</button>
+  <button tabindex="-1" class="tb-btn primary" on:click={addRootTask}>+ Task</button>
+  <button tabindex="-1" class="tb-btn" on:click={() => showRapidInput.set(true)} title="Rapid Input (Ctrl+Shift+I)">📋 Rapid</button>
 
   <div class="tb-divider"></div>
 
   <!-- Contextual task actions -->
-  <button class="tb-btn" on:click={addSubtask} disabled={!hasSelected} title="Add subtask to selected">+ Sub</button>
-  <button class="tb-btn icon" on:click={onIndent}   disabled={!hasSelected || myIndex <= 0}             title="Indent (→)">⇥</button>
-  <button class="tb-btn icon" on:click={onOutdent}  disabled={!hasSelected || !selectedTask?.parent_id} title="Outdent (←)">⇤</button>
-  <button class="tb-btn icon" on:click={onMoveUp}   disabled={!hasSelected || myIndex <= 0}             title="Move up">↑</button>
-  <button class="tb-btn icon" on:click={onMoveDown} disabled={!hasSelected || myIndex >= siblings.length - 1} title="Move down">↓</button>
-  <button class="tb-btn icon danger" on:click={onDelete} disabled={!hasSelected} title="Delete selected (Del)">✕</button>
+  <button tabindex="-1" class="tb-btn" on:click={addSubtask} disabled={!hasSelected} title="Add subtask to selected">+ Sub</button>
+  <button tabindex="-1" class="tb-btn icon" on:click={onIndent}   disabled={!hasSelected || myIndex <= 0}             title="Indent (→)">⇥</button>
+  <button tabindex="-1" class="tb-btn icon" on:click={onOutdent}  disabled={!hasSelected || !selectedTask?.parent_id} title="Outdent (←)">⇤</button>
+  <button tabindex="-1" class="tb-btn icon" on:click={onMoveUp}   disabled={!hasSelected || myIndex <= 0}             title="Move up">↑</button>
+  <button tabindex="-1" class="tb-btn icon" on:click={onMoveDown} disabled={!hasSelected || myIndex >= siblings.length - 1} title="Move down">↓</button>
+  <button tabindex="-1" class="tb-btn icon danger" on:click={onDelete} disabled={!hasSelected} title="Delete selected (Del)">✕</button>
 
   <div class="spacer"></div>
 
   <!-- Column visibility -->
   <div style="position:relative">
-    <button class="tb-btn" on:click={() => showColMenu = !showColMenu} title="Show/hide columns">
+    <button tabindex="-1" class="tb-btn" on:click={() => showColMenu = !showColMenu} title="Show/hide columns">
       Columns ▾
     </button>
     {#if showColMenu}
@@ -172,9 +172,9 @@
     {/if}
   </div>
 
-  <button class="tb-btn icon" on:click={expandAll}    title="Expand all">⊞</button>
-  <button class="tb-btn icon" on:click={collapseAll}  title="Collapse all">⊟</button>
-  <button class="tb-btn icon" on:click={clearSelection} title="Clear selection">○</button>
+  <button tabindex="-1" class="tb-btn icon" on:click={expandAll}    title="Expand all">⊞</button>
+  <button tabindex="-1" class="tb-btn icon" on:click={collapseAll}  title="Collapse all">⊟</button>
+  <button tabindex="-1" class="tb-btn icon" on:click={clearSelection} title="Clear selection">○</button>
 </div>
 
 {#if showColMenu}
@@ -209,7 +209,7 @@
 </div>
 
 <!-- Task list -->
-<div class="task-list" role="treegrid">
+<div class="task-list" role="none">
   {#each $rootTasks as task (task.id)}
     <TaskRow task={task} depth={0} siblings={$rootTasks} visibleCols={$visibleCols} />
   {/each}

@@ -5,7 +5,7 @@
     expanded, selected, editingId, contextMenu,
     toggleExpanded, setSelected, updateTask,
     completeTask, createTask,
-    outlineScrollToId, flags, tags
+    outlineScrollToId, flags, tags, childrenOf
   } from '../stores/tasks';
   import { parseCaption } from '../parsing';
 
@@ -25,7 +25,7 @@
   $: isSelected = $selected.has(task.id);
   $: isEditing = $editingId === task.id;
   $: if (isEditing) tick().then(() => inputEl?.focus());
-  $: children = isExpanded ? getChildren(task.id) : [];
+  $: children = isExpanded ? ($childrenOf.get(task.id) ?? []) : [];
 
 
   // Scroll-flash: watch outlineScrollToId
@@ -159,8 +159,8 @@
   draggable={true}
   on:dragstart={onDragStart}
   on:dragend={onDragEnd}
-  role="row"
-  tabindex="0"
+  role="none"
+  tabindex="-1"
 >
   <!-- Expand/collapse toggle -->
   <button
