@@ -1,4 +1,4 @@
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use serde::{Deserialize, Serialize};
 use crate::db;
 
