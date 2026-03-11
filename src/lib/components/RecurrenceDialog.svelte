@@ -50,7 +50,6 @@
 
   // monthly sub-mode: 'day' | 'nth'
   let monthlyMode: 'day' | 'nth' = (r.nth_weekday != null) ? 'nth' : 'day';
-  $: if (r.freq !== 'monthly') { monthlyMode = r.day_of_month != null ? 'day' : 'nth'; }
 
   function toggleDow(idx: number) {
     const set = new Set(r.days_of_week ?? []);

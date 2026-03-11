@@ -1,17 +1,19 @@
 <script lang="ts">
   import { writable } from 'svelte/store';
+  import { onDestroy } from 'svelte';
   import TaskRow from './TaskRow.svelte';
   import {
     rootTasks, sortField, sortDir, toggleSort,
     expandAll, collapseAll, clearSelection, createTask, editingId,
     showRapidInput, selected, taskById, expanded,
     moveTask, reorderTasks, deleteTask, childrenOf,
-    setSelected, outlineScrollToId
+    setSelected, outlineScrollToId, rangeAnchorId
   } from '../stores/tasks';
   import type { Task } from '../types';
 
   // ── Selected task context ─────────────────────────────────────────────────
-  $: selectedId = $selected.size === 1 ? [...$selected][0] : null;
+  // For single select use that task; for multi-select use the range anchor (last singly-clicked task)
+  $: selectedId = $selected.size === 1 ? [...$selected][0] : ($rangeAnchorId ?? null);
   $: selectedTask = selectedId ? ($taskById.get(selectedId) ?? null) : null;
   $: siblings = selectedTask
     ? ($childrenOf.get(selectedTask.parent_id ?? null) ?? [])
@@ -117,6 +119,7 @@
       if (e.key === 'ArrowDown') { e.preventDefault(); navigateSelection(1); }
       if (e.key === 'ArrowUp')   { e.preventDefault(); navigateSelection(-1); }
       if (e.key === 'Delete' && hasSelected) onDelete();
+      if (e.key === 'F2' && selectedId) { e.preventDefault(); editingId.set(selectedId); }
     }
   }
 
@@ -125,7 +128,7 @@
     { id: 'due',   label: 'Due',   sortKey: 'due_date',   defaultWidth: 80,  center: false },
     { id: 'start', label: 'Start', sortKey: 'start_date', defaultWidth: 70,  center: false },
     { id: 'flag',  label: 'Flag',  sortKey: null,         defaultWidth: 30,  center: true  },
-    { id: 'tags',  label: 'Tags',  sortKey: null,         defaultWidth: 52,  center: true  },
+    { id: 'tags',  label: 'Tags',  sortKey: null,         defaultWidth: 100, center: false },
   ];
 
   // Visibility
@@ -135,7 +138,7 @@
     catch { return new Set(['due', 'start']); }
   }
   let visibleCols = writable<Set<string>>(loadCols());
-  visibleCols.subscribe(v => localStorage.setItem(COL_VIS_KEY, JSON.stringify([...v])));
+  const _unsubVis = visibleCols.subscribe(v => localStorage.setItem(COL_VIS_KEY, JSON.stringify([...v])));
 
   // Order
   const COL_ORDER_KEY = 'outline_col_order';
@@ -149,7 +152,7 @@
     } catch { return ALL_COLS.map(c => c.id); }
   }
   let colOrder = writable<string[]>(loadOrder());
-  colOrder.subscribe(v => localStorage.setItem(COL_ORDER_KEY, JSON.stringify(v)));
+  const _unsubOrder = colOrder.subscribe(v => localStorage.setItem(COL_ORDER_KEY, JSON.stringify(v)));
 
   // Widths
   const COL_WIDTH_KEY = 'outline_col_widths';
@@ -159,7 +162,9 @@
     catch { return { ...DEFAULT_WIDTHS }; }
   }
   let colWidths = writable<Record<string, number>>(loadWidths());
-  colWidths.subscribe(v => localStorage.setItem(COL_WIDTH_KEY, JSON.stringify(v)));
+  const _unsubWidths = colWidths.subscribe(v => localStorage.setItem(COL_WIDTH_KEY, JSON.stringify(v)));
+
+  onDestroy(() => { _unsubVis(); _unsubOrder(); _unsubWidths(); });
 
   // Derived: visible cols in current order
   $: orderedVisibleCols = $colOrder

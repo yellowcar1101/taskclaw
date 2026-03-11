@@ -48,8 +48,8 @@
   // ── Actions ─────────────────────────────────────────────────────────────────
 
   async function act(fn: () => Promise<unknown>) {
-    close();
     await fn();
+    close();
   }
 
   async function newTask() {

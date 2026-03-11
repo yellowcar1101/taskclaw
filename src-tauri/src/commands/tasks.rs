@@ -126,7 +126,7 @@ fn get_task_by_id(conn: &Connection, id: &str) -> Option<Task> {
 
 #[tauri::command]
 pub fn get_tasks(state: State<DbState>, parent_id: Option<String>) -> Vec<Task> {
-    let conn = state.0.lock().unwrap();
+    let conn = match state.0.lock() { Ok(c) => c, Err(_) => return vec![] };
     let sql = format!("{} WHERE parent_id IS ?1 AND completed_at IS NULL ORDER BY position", TASK_SELECT);
     conn.prepare(&sql).and_then(|mut s| {
         s.query_map(params![parent_id], map_row)
@@ -136,7 +136,7 @@ pub fn get_tasks(state: State<DbState>, parent_id: Option<String>) -> Vec<Task> 
 
 #[tauri::command]
 pub fn get_all_tasks_flat(state: State<DbState>, include_completed: Option<bool>) -> Vec<Task> {
-    let conn = state.0.lock().unwrap();
+    let conn = match state.0.lock() { Ok(c) => c, Err(_) => return vec![] };
     let where_clause = if include_completed.unwrap_or(false) { "" } else { " WHERE completed_at IS NULL" };
     let sql = format!("{}{} ORDER BY position", TASK_SELECT, where_clause);
     conn.prepare(&sql).and_then(|mut s| {
@@ -147,7 +147,7 @@ pub fn get_all_tasks_flat(state: State<DbState>, include_completed: Option<bool>
 
 #[tauri::command]
 pub fn create_task(state: State<DbState>, input: CreateTaskInput) -> Result<Task, String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
 
     if input.caption.is_empty() { return Err("caption cannot be empty".into()); }
     if input.caption.len() > 500 { return Err("caption too long (max 500 chars)".into()); }
@@ -195,7 +195,7 @@ pub fn create_task(state: State<DbState>, input: CreateTaskInput) -> Result<Task
 
 #[tauri::command]
 pub fn update_task(state: State<DbState>, id: String, input: UpdateTaskInput) -> Result<Task, String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     let now = Utc::now().to_rfc3339();
 
     // verify exists
@@ -276,7 +276,7 @@ pub fn update_task(state: State<DbState>, id: String, input: UpdateTaskInput) ->
 
 #[tauri::command]
 pub fn delete_task(state: State<DbState>, id: String) -> Result<(), String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     let n = conn.execute("DELETE FROM tasks WHERE id=?1", params![id])
         .map_err(|e| e.to_string())?;
     if n == 0 { Err("task not found".into()) } else { Ok(()) }
@@ -284,24 +284,26 @@ pub fn delete_task(state: State<DbState>, id: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn delete_task_recursive(state: State<DbState>, id: String) -> Result<(), String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     let exists: bool = conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM tasks WHERE id=?1)", params![id], |r| r.get(0)
     ).unwrap_or(false);
     if !exists { return Err("task not found".into()); }
-    conn.execute_batch(&format!("
-        WITH RECURSIVE descendants(id) AS (
-            SELECT id FROM tasks WHERE id = '{}'
+    conn.execute(
+        "WITH RECURSIVE descendants(id) AS (
+            SELECT id FROM tasks WHERE id = ?1
             UNION ALL
             SELECT t.id FROM tasks t JOIN descendants d ON t.parent_id = d.id
         )
-        DELETE FROM tasks WHERE id IN (SELECT id FROM descendants);
-    ", id.replace('\'', "''"))).map_err(|e| e.to_string())
+        DELETE FROM tasks WHERE id IN (SELECT id FROM descendants)",
+        params![id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
 pub fn complete_task(state: State<DbState>, id: String, completed: bool) -> Result<Task, String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     let now = Utc::now().to_rfc3339();
 
     // If marking complete and task has recurrence, advance instead of archiving
@@ -372,15 +374,15 @@ pub fn complete_task(state: State<DbState>, id: String, completed: bool) -> Resu
                 ).map_err(|e| e.to_string())?;
 
                 if reset_subtasks {
-                    conn.execute_batch(&format!(
+                    conn.execute(
                         "WITH RECURSIVE sub(id) AS (
-                            SELECT id FROM tasks WHERE parent_id = '{0}'
+                            SELECT id FROM tasks WHERE parent_id = ?1
                             UNION ALL
                             SELECT t.id FROM tasks t JOIN sub s ON t.parent_id = s.id
                          )
-                         UPDATE tasks SET completed_at = NULL, updated_at = '{1}' WHERE id IN (SELECT id FROM sub)",
-                        id.replace('\'', "''"), now.replace('\'', "''")
-                    )).map_err(|e| e.to_string())?;
+                         UPDATE tasks SET completed_at = NULL, updated_at = ?2 WHERE id IN (SELECT id FROM sub)",
+                        params![id, now],
+                    ).map_err(|e| e.to_string())?;
                 }
 
                 return get_task_by_id(&conn, &id).ok_or_else(|| "task not found after recurrence advance".into());
@@ -400,32 +402,28 @@ pub fn complete_task(state: State<DbState>, id: String, completed: bool) -> Resu
 
 #[tauri::command]
 pub fn complete_branch(state: State<DbState>, id: String, completed: bool) -> Result<(), String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     let exists: bool = conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM tasks WHERE id=?1)", params![id], |r| r.get(0)
     ).unwrap_or(false);
     if !exists { return Err("task not found".into()); }
     let now = Utc::now().to_rfc3339();
-    let completed_at_sql = if completed {
-        format!("'{}'", now)
-    } else {
-        "NULL".to_string()
-    };
-    conn.execute_batch(&format!("
-        WITH RECURSIVE branch(id) AS (
-            SELECT id FROM tasks WHERE id = '{}'
+    let completed_at_val: Option<&str> = if completed { Some(now.as_str()) } else { None };
+    conn.execute(
+        "WITH RECURSIVE branch(id) AS (
+            SELECT id FROM tasks WHERE id = ?1
             UNION ALL
             SELECT t.id FROM tasks t JOIN branch b ON t.parent_id = b.id
         )
-        UPDATE tasks SET completed_at = {}, updated_at = '{}'
-        WHERE id IN (SELECT id FROM branch);
-    ", id.replace('\'', "''"), completed_at_sql, now.replace('\'', "''")
-    )).map_err(|e| e.to_string())
+        UPDATE tasks SET completed_at = ?2, updated_at = ?3
+        WHERE id IN (SELECT id FROM branch)",
+        params![id, completed_at_val, now],
+    ).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn move_task(state: State<DbState>, id: String, new_parent_id: Option<String>, new_position: f64) -> Result<Task, String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     let now = Utc::now().to_rfc3339();
     // cycle check
     if let Some(ref npid) = new_parent_id {
@@ -451,7 +449,7 @@ pub fn move_task(state: State<DbState>, id: String, new_parent_id: Option<String
 
 #[tauri::command]
 pub fn reorder_tasks(state: State<DbState>, ids_and_positions: Vec<(String, f64)>) -> Result<(), String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     let now = Utc::now().to_rfc3339();
     for (id, pos) in &ids_and_positions {
         let n = conn.execute(
@@ -465,7 +463,7 @@ pub fn reorder_tasks(state: State<DbState>, ids_and_positions: Vec<(String, f64)
 
 #[tauri::command]
 pub fn duplicate_task(state: State<DbState>, id: String) -> Result<Task, String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     let original = get_task_by_id(&conn, &id).ok_or("task not found")?;
     let new_id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
@@ -495,7 +493,7 @@ pub fn sort_subtasks(state: State<DbState>, parent_id: Option<String>, sort_by: 
     if !valid_sort.contains(&sort_by.as_str()) { return Err("invalid sort_by value".into()); }
     if sort_dir != "asc" && sort_dir != "desc" { return Err("invalid sort_dir value".into()); }
 
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     let sql = format!("{} WHERE parent_id IS ?1", TASK_SELECT);
     let mut tasks: Vec<Task> = conn.prepare(&sql).and_then(|mut s| {
         s.query_map(params![parent_id], map_row)
@@ -558,7 +556,7 @@ fn nth_weekday_of_month(year: i32, month: u32, n: u32, day_iso: u32) -> Option<N
 
 fn next_occurrence_from(base: NaiveDate, rule: &serde_json::Value) -> Option<NaiveDate> {
     let freq = rule["freq"].as_str()?;
-    let interval = rule["interval"].as_u64().unwrap_or(1);
+    let interval = rule["interval"].as_u64().unwrap_or(1).min(9999);
 
     match freq {
         "daily" => Some(base + Duration::days(interval as i64)),
@@ -616,7 +614,7 @@ fn next_occurrence_from(base: NaiveDate, rule: &serde_json::Value) -> Option<Nai
 
 #[tauri::command]
 pub fn skip_occurrence(state: State<DbState>, id: String) -> Result<Task, String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     let task = get_task_by_id(&conn, &id).ok_or("task not found")?;
 
     let rule_str = task.recurrence_rule.as_deref().ok_or("task has no recurrence rule")?;

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { writable } from 'svelte/store';
+  import { onDestroy } from 'svelte';
   import type { SavedView, Task } from '../types';
   import {
     allTasks, searchQuery, filterFlagId, sortTasks,
@@ -79,7 +80,7 @@
     catch { return new Set(['due', 'start']); }
   }
   let visibleCols = writable<Set<string>>(loadCols());
-  visibleCols.subscribe(v => localStorage.setItem(COL_VIS_KEY, JSON.stringify([...v])));
+  const _unsubVis = visibleCols.subscribe(v => localStorage.setItem(COL_VIS_KEY, JSON.stringify([...v])));
 
   // Order
   const COL_ORDER_KEY = 'plan_col_order';
@@ -93,7 +94,7 @@
     } catch { return ALL_COLS.map(c => c.id); }
   }
   let colOrder = writable<string[]>(loadOrder());
-  colOrder.subscribe(v => localStorage.setItem(COL_ORDER_KEY, JSON.stringify(v)));
+  const _unsubOrder = colOrder.subscribe(v => localStorage.setItem(COL_ORDER_KEY, JSON.stringify(v)));
 
   // Widths
   const COL_WIDTH_KEY = 'plan_col_widths';
@@ -103,7 +104,9 @@
     catch { return { ...DEFAULT_WIDTHS }; }
   }
   let colWidths = writable<Record<string, number>>(loadWidths());
-  colWidths.subscribe(v => localStorage.setItem(COL_WIDTH_KEY, JSON.stringify(v)));
+  const _unsubWidths = colWidths.subscribe(v => localStorage.setItem(COL_WIDTH_KEY, JSON.stringify(v)));
+
+  onDestroy(() => { _unsubVis(); _unsubOrder(); _unsubWidths(); });
 
   $: orderedVisibleCols = $colOrder
     .map(id => ALL_COLS.find(c => c.id === id)!)

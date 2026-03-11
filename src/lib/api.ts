@@ -56,11 +56,11 @@ export const api = {
     invoke('webapi_status'),
 
   // ── GDrive Sync ────────────────────────────────────────────────────────────
-  gdriveAuthUrl: (): Promise<{ url: string; port: number }> =>
+  gdriveAuthUrl: (): Promise<{ url: string; port: number; state: string }> =>
     invoke('gdrive_auth_url'),
 
-  gdriveWaitAuth: (port: number): Promise<string> =>
-    invoke('gdrive_wait_auth', { port }),
+  gdriveWaitAuth: (port: number, csrfState: string): Promise<string> =>
+    invoke('gdrive_wait_auth', { port, csrfState }),
 
   gdriveStatus: (): Promise<boolean> =>
     invoke('gdrive_status'),

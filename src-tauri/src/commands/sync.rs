@@ -47,7 +47,7 @@ fn get_credentials(conn: &rusqlite::Connection) -> (String, String) {
 
 #[tauri::command]
 pub fn gdrive_set_credentials(state: State<DbState>, client_id: String, client_secret: String) -> Result<(), String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     if client_id.trim().is_empty() {
         conn.execute("DELETE FROM app_settings WHERE key='gdrive_client_id'", [])
             .map_err(|e| e.to_string())?;
@@ -76,7 +76,7 @@ pub fn gdrive_set_credentials(state: State<DbState>, client_id: String, client_s
 
 #[tauri::command]
 pub fn gdrive_has_custom_credentials(state: State<DbState>) -> bool {
-    let conn = state.0.lock().unwrap();
+    let conn = match state.0.lock() { Ok(c) => c, Err(_) => return false };
     conn.query_row(
         "SELECT 1 FROM app_settings WHERE key='gdrive_client_id'", [], |_| Ok(1_i32)
     ).is_ok()
@@ -88,38 +88,43 @@ pub fn gdrive_has_custom_credentials(state: State<DbState>) -> bool {
 pub struct AuthInfo {
     pub url: String,
     pub port: u16,
+    pub state: String,  // CSRF state parameter — must be echoed back to gdrive_wait_auth
 }
 
 #[tauri::command]
 pub fn gdrive_auth_url(state: State<'_, DbState>) -> Result<AuthInfo, String> {
     let (client_id, _) = {
-        let conn = state.0.lock().unwrap();
+        let conn = state.0.lock().map_err(|e| e.to_string())?;
         get_credentials(&conn)
     };
 
     // Pick an available port
     let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
-    let port = listener.local_addr().unwrap().port();
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     drop(listener); // free it so wait_auth can re-bind
+
+    // Generate CSRF state token
+    let csrf_state = uuid::Uuid::new_v4().to_string();
 
     let redirect = format!("http://localhost:{}", port);
     let url = format!(
         "https://accounts.google.com/o/oauth2/v2/auth?\
-         client_id={}&redirect_uri={}&response_type=code&scope={}&access_type=offline&prompt=consent",
+         client_id={}&redirect_uri={}&response_type=code&scope={}&access_type=offline&prompt=consent&state={}",
         urlencoding::encode(&client_id),
         urlencoding::encode(&redirect),
-        urlencoding::encode(DRIVE_SCOPES)
+        urlencoding::encode(DRIVE_SCOPES),
+        urlencoding::encode(&csrf_state)
     );
-    Ok(AuthInfo { url, port })
+    Ok(AuthInfo { url, port, state: csrf_state })
 }
 
 // ── Wait for redirect code ────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn gdrive_wait_auth(state: State<'_, DbState>, port: u16) -> Result<String, String> {
+pub fn gdrive_wait_auth(state: State<'_, DbState>, port: u16, csrf_state: String) -> Result<String, String> {
     let redirect = format!("http://localhost:{}", port);
     let (client_id, client_secret) = {
-        let conn = state.0.lock().unwrap();
+        let conn = state.0.lock().map_err(|e| e.to_string())?;
         get_credentials(&conn)
     };
 
@@ -139,15 +144,25 @@ pub fn gdrive_wait_auth(state: State<'_, DbState>, port: u16) -> Result<String, 
     let reader = BufReader::new(&stream);
     let first_line = reader.lines().next().ok_or("no request")?.map_err(|e| e.to_string())?;
 
-    // Parse code from GET /?code=...
-    let code = first_line
+    // Parse query string params from GET /?code=...&state=...
+    let qs = first_line
         .split_whitespace()
         .nth(1)
-        .and_then(|path| {
-            path.split('?').nth(1).and_then(|qs| {
-                qs.split('&').find(|p| p.starts_with("code=")).map(|p| p[5..].to_string())
-            })
-        })
+        .and_then(|path| path.split('?').nth(1))
+        .unwrap_or("");
+
+    // Verify CSRF state before accepting code
+    let returned_state = qs.split('&')
+        .find(|p| p.starts_with("state="))
+        .map(|p| urlencoding::decode(&p[6..]).unwrap_or_default().into_owned())
+        .unwrap_or_default();
+    if returned_state != csrf_state {
+        return Err("OAuth state mismatch — possible CSRF attack. Please try again.".into());
+    }
+
+    let code = qs.split('&')
+        .find(|p| p.starts_with("code="))
+        .map(|p| urlencoding::decode(&p[5..]).unwrap_or_default().into_owned())
         .ok_or("no code in redirect")?;
 
     // Send success page back to browser
@@ -182,7 +197,7 @@ pub fn gdrive_wait_auth(state: State<'_, DbState>, port: u16) -> Result<String, 
     let refresh_token = resp_json["refresh_token"].as_str().unwrap_or("").to_string();
 
     // Store tokens in app_settings
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?1, ?2)",
         params!["gdrive_access_token", &access_token],
@@ -241,7 +256,7 @@ fn get_valid_token(conn: &rusqlite::Connection) -> Result<String, String> {
 
 #[tauri::command]
 pub fn gdrive_status(state: State<DbState>) -> bool {
-    let conn = state.0.lock().unwrap();
+    let conn = match state.0.lock() { Ok(c) => c, Err(_) => return false };
     conn.query_row(
         "SELECT 1 FROM app_settings WHERE key='gdrive_refresh_token'",
         [], |_| Ok(1_i32)
@@ -252,7 +267,7 @@ pub fn gdrive_status(state: State<DbState>) -> bool {
 
 #[tauri::command]
 pub fn gdrive_disconnect(state: State<DbState>) -> Result<(), String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM app_settings WHERE key IN ('gdrive_access_token','gdrive_refresh_token','gdrive_file_id','gdrive_last_sync')", [])
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -273,26 +288,28 @@ struct SyncPayload {
 
 fn build_sync_payload(conn: &rusqlite::Connection) -> Result<SyncPayload, String> {
     fn query_json(conn: &rusqlite::Connection, sql: &str) -> serde_json::Value {
-        let mut stmt = conn.prepare(sql).unwrap();
+        let mut stmt = match conn.prepare(sql) {
+            Ok(s) => s,
+            Err(e) => { eprintln!("sync query_json prepare error: {}", e); return serde_json::json!([]); }
+        };
         let cols: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
-        let rows: Vec<serde_json::Value> = stmt
-            .query_map([], |row| {
-                let mut obj = serde_json::Map::new();
-                for (i, col) in cols.iter().enumerate() {
-                    let val: serde_json::Value = match row.get_ref(i).unwrap() {
-                        rusqlite::types::ValueRef::Null    => serde_json::Value::Null,
-                        rusqlite::types::ValueRef::Integer(n) => serde_json::Value::Number(n.into()),
-                        rusqlite::types::ValueRef::Real(f)    => serde_json::json!(f),
-                        rusqlite::types::ValueRef::Text(s)    => serde_json::Value::String(String::from_utf8_lossy(s).into()),
-                        rusqlite::types::ValueRef::Blob(_)    => serde_json::Value::Null,
-                    };
-                    obj.insert(col.clone(), val);
-                }
-                Ok(serde_json::Value::Object(obj))
-            })
-            .unwrap()
-            .filter_map(|r| r.ok())
-            .collect();
+        let rows: Vec<serde_json::Value> = match stmt.query_map([], |row| {
+            let mut obj = serde_json::Map::new();
+            for (i, col) in cols.iter().enumerate() {
+                let val: serde_json::Value = match row.get_ref(i).unwrap_or(rusqlite::types::ValueRef::Null) {
+                    rusqlite::types::ValueRef::Null    => serde_json::Value::Null,
+                    rusqlite::types::ValueRef::Integer(n) => serde_json::Value::Number(n.into()),
+                    rusqlite::types::ValueRef::Real(f)    => serde_json::json!(f),
+                    rusqlite::types::ValueRef::Text(s)    => serde_json::Value::String(String::from_utf8_lossy(s).into()),
+                    rusqlite::types::ValueRef::Blob(_)    => serde_json::Value::Null,
+                };
+                obj.insert(col.clone(), val);
+            }
+            Ok(serde_json::Value::Object(obj))
+        }) {
+            Ok(iter) => iter.filter_map(|r| r.ok()).collect(),
+            Err(_) => vec![],
+        };
         serde_json::Value::Array(rows)
     }
 
@@ -404,7 +421,7 @@ fn find_or_create_file(
 
 #[tauri::command]
 pub fn gdrive_sync_push(state: State<DbState>) -> Result<String, String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     let token = get_valid_token(&conn)?;
     let payload = build_sync_payload(&conn)?;
     let json_str = serde_json::to_string_pretty(&payload).map_err(|e| e.to_string())?;
@@ -441,7 +458,7 @@ pub fn gdrive_sync_push(state: State<DbState>) -> Result<String, String> {
 
 #[tauri::command]
 pub fn gdrive_sync_pull(state: State<DbState>) -> Result<String, String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     let token = get_valid_token(&conn)?;
     let file_id = find_or_create_file(&token, &conn)?;
 
@@ -593,7 +610,7 @@ fn restore_payload(conn: &rusqlite::Connection, payload: &SyncPayload) -> Result
 
 #[tauri::command]
 pub fn gdrive_last_sync(state: State<DbState>) -> Option<String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().ok()?;
     conn.query_row(
         "SELECT value FROM app_settings WHERE key='gdrive_last_sync'",
         [], |r| r.get(0)
@@ -604,7 +621,7 @@ pub fn gdrive_last_sync(state: State<DbState>) -> Option<String> {
 
 #[tauri::command]
 pub fn set_sync_folder(state: State<DbState>, path: String) -> Result<(), String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('sync_folder', ?1)",
         params![&path],
@@ -614,7 +631,7 @@ pub fn set_sync_folder(state: State<DbState>, path: String) -> Result<(), String
 
 #[tauri::command]
 pub fn get_sync_folder(state: State<DbState>) -> Option<String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().ok()?;
     conn.query_row(
         "SELECT value FROM app_settings WHERE key='sync_folder'", [], |r| r.get(0)
     ).ok()
@@ -622,7 +639,7 @@ pub fn get_sync_folder(state: State<DbState>) -> Option<String> {
 
 #[tauri::command]
 pub fn folder_sync_push(state: State<DbState>) -> Result<String, String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     let folder: String = conn.query_row(
         "SELECT value FROM app_settings WHERE key='sync_folder'", [], |r| r.get(0)
     ).map_err(|_| "No sync folder set. Choose a folder in Preferences → Sync.")?;
@@ -645,7 +662,7 @@ pub fn folder_sync_push(state: State<DbState>) -> Result<String, String> {
 
 #[tauri::command]
 pub fn folder_sync_pull(state: State<DbState>) -> Result<String, String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     let folder: String = conn.query_row(
         "SELECT value FROM app_settings WHERE key='sync_folder'", [], |r| r.get(0)
     ).map_err(|_| "No sync folder set. Choose a folder in Preferences → Sync.")?;
@@ -670,7 +687,7 @@ pub fn folder_sync_pull(state: State<DbState>) -> Result<String, String> {
 
 #[tauri::command]
 pub fn folder_last_sync(state: State<DbState>) -> Option<String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().ok()?;
     conn.query_row(
         "SELECT value FROM app_settings WHERE key='folder_last_sync'", [], |r| r.get(0)
     ).ok()

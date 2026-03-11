@@ -12,16 +12,31 @@
 
   let reminders: ReminderItem[] = [];
   let unlistenUpdate: (() => void) | undefined;
+  let unlistenClose: (() => void) | undefined;
 
   onMount(async () => {
     unlistenUpdate = await listen<ReminderItem[]>('reminders:update', (e) => {
       reminders = e.payload;
     });
+
+    // Intercept native window X button — hide instead of destroy
+    try {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      const win = getCurrentWindow();
+      unlistenClose = await win.onCloseRequested((event) => {
+        event.preventDefault();
+        invoke('hide_reminder_window');
+      });
+    } catch {}
+
     // Tell the main window we're ready to receive data
     await emit('reminder:ready', null);
   });
 
-  onDestroy(() => unlistenUpdate?.());
+  onDestroy(() => {
+    unlistenUpdate?.();
+    unlistenClose?.();
+  });
 
   async function dismiss(id: string) {
     await emit('reminder:dismiss', id);
@@ -63,10 +78,14 @@
 </div>
 
 <style>
-  :global(body) {
+  :global(html), :global(body) {
     margin: 0;
-    background: var(--surface);
+    background: #222222;
+    background: var(--surface, #222222);
+    color: #e0e0e0;
+    color: var(--text, #e0e0e0);
     overflow: hidden;
+    font-family: system-ui, sans-serif;
   }
 
   .reminder-page {

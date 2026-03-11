@@ -37,6 +37,7 @@
     const due: ReminderItem[] = [];
     for (const task of $allTasks) {
       if (!task.reminder_at) continue;
+      if (!task.reminder_at.includes('T')) continue; // require explicit time component
       if (new Date(task.reminder_at).getTime() > now) continue;
       if (snoozed[task.id]) continue;
       due.push({ id: task.id, caption: task.caption, dueLabel: formatDateDisplay(task.due_date) });

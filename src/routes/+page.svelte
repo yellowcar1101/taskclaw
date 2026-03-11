@@ -144,6 +144,48 @@
     activeTabId.set(v.id);
     editingViewId.set(v.id);
   }
+
+  // ── Svelte action: auto-focus element ────────────────────────────────────────
+  function autoFocus(node: HTMLElement) { setTimeout(() => node.focus(), 0); }
+
+  // ── Tab context menu ────────────────────────────────────────────────────────
+  let tabCtxMenu: { x: number; y: number; viewId: string } | null = null;
+  let tabRenaming: string | null = null; // viewId being renamed
+  let tabRenameValue = '';
+
+  function onTabContextMenu(e: MouseEvent, viewId: string) {
+    e.preventDefault();
+    tabCtxMenu = { x: e.clientX, y: e.clientY, viewId };
+  }
+
+  function closeTabCtx() { tabCtxMenu = null; }
+
+  function startTabRename(viewId: string) {
+    closeTabCtx();
+    const v = $views.find(v => v.id === viewId);
+    if (!v) return;
+    tabRenaming = viewId;
+    tabRenameValue = v.name;
+  }
+
+  async function commitTabRename() {
+    if (!tabRenaming || !tabRenameValue.trim()) { tabRenaming = null; return; }
+    const { api } = await import('$lib/api');
+    const v = $views.find(v => v.id === tabRenaming);
+    if (v) {
+      const updated = await api.updateView(v.id, { ...v, name: tabRenameValue.trim() });
+      views.update(vs => vs.map(x => x.id === v.id ? updated : x));
+    }
+    tabRenaming = null;
+  }
+
+  async function deleteView(viewId: string) {
+    closeTabCtx();
+    const { api } = await import('$lib/api');
+    await api.deleteView(viewId);
+    views.update(vs => vs.filter(v => v.id !== viewId));
+    if ($activeTabId === viewId) activeTabId.set('outline');
+  }
 </script>
 
 <div class="app-shell">
@@ -211,12 +253,24 @@
       >◷ Today</button>
 
       {#each $views as view (view.id)}
-        <div class="vtab-wrap" class:active={$activeTabId === view.id}>
-          <button
-            class="vtab" class:active={$activeTabId === view.id}
-            on:click={() => activeTabId.set(view.id)}
-            tabindex="-1"
-          >{view.name}</button>
+        <div class="vtab-wrap" class:active={$activeTabId === view.id}
+          on:contextmenu={e => onTabContextMenu(e, view.id)}
+        >
+          {#if tabRenaming === view.id}
+            <input
+              class="vtab-rename-input"
+              bind:value={tabRenameValue}
+              on:blur={commitTabRename}
+              on:keydown={e => { if (e.key === 'Enter') commitTabRename(); if (e.key === 'Escape') tabRenaming = null; }}
+              use:autoFocus
+            />
+          {:else}
+            <button
+              class="vtab" class:active={$activeTabId === view.id}
+              on:click={() => activeTabId.set(view.id)}
+              tabindex="-1"
+            >{view.name}</button>
+          {/if}
           <button
             class="vtab-gear"
             on:click|stopPropagation={() => editingViewId.set(view.id)}
@@ -276,6 +330,16 @@
 {/if}
 
 <ReminderWindow />
+
+{#if tabCtxMenu}
+  <div class="tab-ctx-backdrop" on:click={closeTabCtx} role="none"></div>
+  <div class="tab-ctx-menu" style="left:{tabCtxMenu.x}px;top:{tabCtxMenu.y}px" role="menu">
+    <button class="tab-ctx-item" on:click={() => startTabRename(tabCtxMenu!.viewId)} role="menuitem">Rename</button>
+    <button class="tab-ctx-item" on:click={() => editingViewId.set(tabCtxMenu!.viewId)} role="menuitem">Settings</button>
+    <div class="tab-ctx-sep"></div>
+    <button class="tab-ctx-item danger" on:click={() => deleteView(tabCtxMenu!.viewId)} role="menuitem">Delete</button>
+  </div>
+{/if}
 
 <style>
   .app-shell {
@@ -437,6 +501,49 @@
     font-size: 14px;
     color: var(--text-dim);
   }
+
+  .vtab-rename-input {
+    background: var(--input-bg);
+    border: 1px solid var(--accent);
+    color: var(--text);
+    font-size: 12px;
+    padding: 2px 6px;
+    outline: none;
+    width: 100px;
+    border-radius: 3px;
+    margin: 2px 2px;
+  }
+
+  .tab-ctx-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 8999;
+  }
+  .tab-ctx-menu {
+    position: fixed;
+    z-index: 9000;
+    background: var(--surface-elevated);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    padding: 4px 0;
+    min-width: 140px;
+    font-size: 12px;
+  }
+  .tab-ctx-item {
+    display: block;
+    width: 100%;
+    background: none;
+    border: none;
+    color: var(--text);
+    padding: 5px 12px;
+    text-align: left;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .tab-ctx-item:hover { background: var(--hover); }
+  .tab-ctx-item.danger { color: var(--red); }
+  .tab-ctx-sep { height: 1px; background: var(--border); margin: 3px 0; }
 
   .search-input {
     background: var(--input-bg);

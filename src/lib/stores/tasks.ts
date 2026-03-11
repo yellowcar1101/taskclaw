@@ -26,6 +26,9 @@ export const sortField         = writable<SortField>('position');
 export const sortDir           = writable<SortDir>('asc');
 export const filterFlagId      = writable<string | null>(null);
 
+// ── UI state (range select) ────────────────────────────────────────────────────
+export const rangeAnchorId = writable<string | null>(null);
+
 // ── Derived ───────────────────────────────────────────────────────────────────
 export const taskById = derived(allTasks, ts => new Map(ts.map(t => [t.id, t])));
 
@@ -54,6 +57,27 @@ export function sortTasks(tasks: Task[], field: SortField, dir: SortDir): Task[]
     return dir === 'asc' ? cmp : -cmp;
   });
 }
+
+// Visible task order (flattened, respecting expand state) — used for range-select
+export const visibleTaskOrder = derived(
+  [childrenOf, expanded, allTasks],
+  ([$co, $exp, $all]) => {
+    // Root tasks sorted by position
+    const roots = ($co.get(null) ?? []).slice().sort((a, b) => a.position - b.position);
+    const result: string[] = [];
+    function walk(tasks: typeof roots) {
+      for (const t of tasks) {
+        result.push(t.id);
+        if ($exp.has(t.id)) {
+          const ch = ($co.get(t.id) ?? []).slice().sort((a, b) => a.position - b.position);
+          walk(ch);
+        }
+      }
+    }
+    walk(roots);
+    return result;
+  }
+);
 
 export const rootTasks = derived(
   [childrenOf, sortField, sortDir, filterFlagId, searchQuery],
@@ -204,9 +228,22 @@ export function setSelected(id: string, multi: boolean) {
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     }
+    rangeAnchorId.set(id);
     return new Set([id]);
   });
   if (!multi) detailTaskId.set(id);
+}
+
+export function setSelectedRange(id: string) {
+  const flat = get(visibleTaskOrder);
+  const anchor = get(rangeAnchorId) ?? id;
+  const anchorIdx = flat.indexOf(anchor);
+  const targetIdx = flat.indexOf(id);
+  if (anchorIdx === -1 || targetIdx === -1) { setSelected(id, false); return; }
+  const lo = Math.min(anchorIdx, targetIdx);
+  const hi = Math.max(anchorIdx, targetIdx);
+  selected.set(new Set(flat.slice(lo, hi + 1)));
+  detailTaskId.set(id);
 }
 
 export function clearSelection() {

@@ -76,7 +76,11 @@
       .replace(/\*(.+?)\*/g, '<em>$1</em>')
       .replace(/~~(.+?)~~/g, '<del>$1</del>')
       .replace(/`(.+?)`/g, '<code>$1</code>')
-      .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank">$1</a>')
+      .replace(/\[(.+?)\]\((.+?)\)/g, (_, text, url) => {
+        const trimmed = url.trim();
+        const safe = /^(https?:|mailto:)/i.test(trimmed) ? trimmed : '#';
+        return `<a href="${safe}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+      })
       .replace(/^[-*] (.+)$/gm, '<li>$1</li>')
       .replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>')
       .replace(/\n\n/g, '</p><p>')
@@ -179,6 +183,13 @@
   async function saveReminder() {
     if (!task) return;
     if (!reminderOn) { await updateTask(task.id, { reminder_at: '' }); return; }
+    // Pre-populate date from due_date or start_date when first enabling
+    if (!reminderDateVal) {
+      reminderDateVal = (task.due_date ?? task.start_date ?? '').split('T')[0];
+    }
+    if (!reminderTimeVal) {
+      reminderTimeVal = '09:00';
+    }
     const val = buildDateStr(reminderDateVal, reminderTimeVal, true);
     if (val) await updateTask(task.id, { reminder_at: val });
   }
@@ -232,12 +243,20 @@
                     highlight_color: null as string|null, font_color: null as string|null,
                     sidebar_color: null as string|null, subtasks_inherit: false };
   let useCustomFmt = false;
+  let prevFmtTaskId: string | null = null;
 
-  $: if (task) {
+  $: if (task && task.id !== prevFmtTaskId) {
+    prevFmtTaskId = task.id;
     if (task.custom_format) {
-      try { customFmt = { ...customFmt, ...JSON.parse(task.custom_format) }; useCustomFmt = true; }
-      catch { useCustomFmt = false; }
+      try {
+        customFmt = { bold: false, italic: false, underline: false, strikethrough: false,
+                      highlight_color: null, font_color: null, sidebar_color: null, subtasks_inherit: false,
+                      ...JSON.parse(task.custom_format) };
+        useCustomFmt = true;
+      } catch { useCustomFmt = false; }
     } else {
+      customFmt = { bold: false, italic: false, underline: false, strikethrough: false,
+                    highlight_color: null, font_color: null, sidebar_color: null, subtasks_inherit: false };
       useCustomFmt = false;
     }
   }
@@ -372,6 +391,7 @@
                 class="tag-input"
                 bind:value={tagInput}
                 on:keydown={onTagKeydown}
+                on:blur={() => setTimeout(() => { tagInput = ''; tagDropdown = []; }, 150)}
                 placeholder="Add tag…"
               />
               {#if tagDropdown.length > 0}
@@ -379,7 +399,7 @@
                   {#each tagDropdown as tid}
                     {@const t = $tags.find(x => x.id === tid)}
                     {#if t}
-                      <div class="tag-opt" on:click={() => addTag(tid)} role="option" aria-selected="false" tabindex="0" on:keydown>
+                      <div class="tag-opt" on:mousedown|preventDefault={() => addTag(tid)} role="option" aria-selected="false" tabindex="0" on:keydown>
                         <span style="width:8px;height:8px;border-radius:50%;background:{t.color};display:inline-block;margin-right:4px"></span>
                         {t.name}
                       </div>

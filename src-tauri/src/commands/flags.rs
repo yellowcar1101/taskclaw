@@ -10,7 +10,7 @@ use crate::types::*;
 
 #[tauri::command]
 pub fn get_flags(state: State<DbState>) -> Vec<Flag> {
-    let conn = state.0.lock().unwrap();
+    let conn = match state.0.lock() { Ok(c) => c, Err(_) => return vec![] };
     conn.prepare("SELECT id, name, color, position FROM flags ORDER BY position")
         .and_then(|mut s| {
             s.query_map([], |r| Ok(Flag {
@@ -24,7 +24,7 @@ pub fn create_flag(state: State<DbState>, name: String, color: String) -> Result
     if name.is_empty() { return Err("name cannot be empty".into()); }
     if name.len() > 50 { return Err("name too long (max 50 chars)".into()); }
     validate_color(&color)?;
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     let existing: i64 = conn.query_row(
         "SELECT COUNT(*) FROM flags WHERE name=?1", params![name], |r| r.get(0)
     ).unwrap_or(0);
@@ -45,7 +45,7 @@ pub fn update_flag(state: State<DbState>, id: String, name: String, color: Strin
     if name.is_empty() { return Err("name cannot be empty".into()); }
     if name.len() > 50 { return Err("name too long (max 50 chars)".into()); }
     validate_color(&color)?;
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     let n = conn.execute(
         "UPDATE flags SET name=?1, color=?2 WHERE id=?3",
         params![name, color, id],
@@ -59,7 +59,7 @@ pub fn update_flag(state: State<DbState>, id: String, name: String, color: Strin
 
 #[tauri::command]
 pub fn delete_flag(state: State<DbState>, id: String) -> Result<(), String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     let n = conn.execute("DELETE FROM flags WHERE id=?1", params![id])
         .map_err(|e| e.to_string())?;
     if n == 0 { Err("flag not found".into()) } else { Ok(()) }
@@ -67,7 +67,7 @@ pub fn delete_flag(state: State<DbState>, id: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn reorder_flags(state: State<DbState>, ids_and_positions: Vec<(String, f64)>) -> Result<(), String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     for (id, pos) in &ids_and_positions {
         let n = conn.execute("UPDATE flags SET position=?1 WHERE id=?2", params![pos, id])
             .map_err(|e| e.to_string())?;
@@ -80,7 +80,7 @@ pub fn reorder_flags(state: State<DbState>, ids_and_positions: Vec<(String, f64)
 
 #[tauri::command]
 pub fn get_tags(state: State<DbState>) -> Vec<Tag> {
-    let conn = state.0.lock().unwrap();
+    let conn = match state.0.lock() { Ok(c) => c, Err(_) => return vec![] };
     conn.prepare("SELECT id, name, color FROM tags ORDER BY name")
         .and_then(|mut s| {
             s.query_map([], |r| Ok(Tag { id: r.get(0)?, name: r.get(1)?, color: r.get(2)? }))
@@ -93,7 +93,7 @@ pub fn create_tag(state: State<DbState>, name: String, color: String) -> Result<
     if name.is_empty() { return Err("name cannot be empty".into()); }
     if name.len() > 50 { return Err("name too long (max 50 chars)".into()); }
     validate_color(&color)?;
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     let id = Uuid::new_v4().to_string();
     conn.execute("INSERT INTO tags (id, name, color) VALUES (?1,?2,?3)", params![id, name, color])
         .map_err(|e| if e.to_string().contains("UNIQUE") { "name already exists".into() } else { e.to_string() })?;
@@ -105,7 +105,7 @@ pub fn update_tag(state: State<DbState>, id: String, name: String, color: String
     if name.is_empty() { return Err("name cannot be empty".into()); }
     if name.len() > 50 { return Err("name too long (max 50 chars)".into()); }
     validate_color(&color)?;
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     let n = conn.execute("UPDATE tags SET name=?1, color=?2 WHERE id=?3", params![name, color, id])
         .map_err(|e| e.to_string())?;
     if n == 0 { Err("tag not found".into()) } else { Ok(Tag { id, name, color }) }
@@ -113,7 +113,7 @@ pub fn update_tag(state: State<DbState>, id: String, name: String, color: String
 
 #[tauri::command]
 pub fn delete_tag(state: State<DbState>, id: String) -> Result<(), String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     let n = conn.execute("DELETE FROM tags WHERE id=?1", params![id])
         .map_err(|e| e.to_string())?;
     if n == 0 { Err("tag not found".into()) } else { Ok(()) }
@@ -123,7 +123,7 @@ pub fn delete_tag(state: State<DbState>, id: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn get_views(state: State<DbState>) -> Vec<SavedView> {
-    let conn = state.0.lock().unwrap();
+    let conn = match state.0.lock() { Ok(c) => c, Err(_) => return vec![] };
     conn.prepare(
         "SELECT id, name, show_completed, group_by, sort_by, sort_dir, visible_fields, filter_json, position
          FROM saved_views ORDER BY position"
@@ -158,7 +158,7 @@ fn validate_view_payload(p: &ViewPayload) -> Result<(), String> {
 #[tauri::command]
 pub fn create_view(state: State<DbState>, payload: ViewPayload) -> Result<SavedView, String> {
     validate_view_payload(&payload)?;
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     let id = Uuid::new_v4().to_string();
     let pos: f64 = conn.query_row(
         "SELECT COALESCE(MAX(position),0)+1 FROM saved_views", [], |r| r.get(0)
@@ -180,7 +180,7 @@ pub fn create_view(state: State<DbState>, payload: ViewPayload) -> Result<SavedV
 #[tauri::command]
 pub fn update_view(state: State<DbState>, id: String, payload: ViewPayload) -> Result<SavedView, String> {
     validate_view_payload(&payload)?;
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     let vf_json = serde_json::to_string(&payload.visible_fields).unwrap_or_else(|_| "[]".into());
     let n = conn.execute(
         "UPDATE saved_views SET name=?1, show_completed=?2, group_by=?3, sort_by=?4,
@@ -200,7 +200,7 @@ pub fn update_view(state: State<DbState>, id: String, payload: ViewPayload) -> R
 
 #[tauri::command]
 pub fn delete_view(state: State<DbState>, id: String) -> Result<(), String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     let n = conn.execute("DELETE FROM saved_views WHERE id=?1", params![id])
         .map_err(|e| e.to_string())?;
     if n == 0 { Err("view not found".into()) } else { Ok(()) }
@@ -208,7 +208,7 @@ pub fn delete_view(state: State<DbState>, id: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn reorder_views(state: State<DbState>, ids_and_positions: Vec<(String, f64)>) -> Result<(), String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     for (id, pos) in &ids_and_positions {
         let n = conn.execute("UPDATE saved_views SET position=?1 WHERE id=?2", params![pos, id])
             .map_err(|e| e.to_string())?;
@@ -228,7 +228,7 @@ pub fn add_email_link(
     if !valid_types.contains(&link_type.as_str()) { return Err("invalid link_type".into()); }
     if link_data.is_empty() { return Err("link_data cannot be empty".into()); }
     if link_data.len() > 2000 { return Err("link_data too long".into()); }
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     let exists: bool = conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM tasks WHERE id=?1)", params![task_id], |r| r.get(0)
     ).unwrap_or(false);
@@ -243,7 +243,7 @@ pub fn add_email_link(
 
 #[tauri::command]
 pub fn delete_email_link(state: State<DbState>, id: String) -> Result<(), String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     let n = conn.execute("DELETE FROM email_links WHERE id=?1", params![id])
         .map_err(|e| e.to_string())?;
     if n == 0 { Err("email link not found".into()) } else { Ok(()) }
@@ -251,15 +251,37 @@ pub fn delete_email_link(state: State<DbState>, id: String) -> Result<(), String
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
+/// Keys that the frontend is allowed to write via set_setting.
+/// Credentials (gdrive_*, api_token) have dedicated commands and are excluded.
+const ALLOWED_SETTING_KEYS: &[&str] = &[
+    "app_font",
+    "app_font_size",
+    "app_compact",
+    "app_task_color",
+    "startup_remember_position",
+    "startup_single_instance",
+];
+
+/// Keys excluded from get_all_settings — fetched only by their dedicated commands.
+const SENSITIVE_SETTING_KEYS: &[&str] = &[
+    "gdrive_access_token",
+    "gdrive_refresh_token",
+    "gdrive_client_secret",
+    "api_token",
+];
+
 #[tauri::command]
 pub fn get_setting(state: State<DbState>, key: String) -> Option<String> {
-    let conn = state.0.lock().unwrap();
+    let conn = state.0.lock().ok()?;
     conn.query_row("SELECT value FROM app_settings WHERE key=?1", params![key], |r| r.get(0)).ok()
 }
 
 #[tauri::command]
 pub fn set_setting(state: State<DbState>, key: String, value: String) -> Result<(), String> {
-    let conn = state.0.lock().unwrap();
+    if !ALLOWED_SETTING_KEYS.contains(&key.as_str()) {
+        return Err(format!("unknown or restricted setting key: {}", key));
+    }
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "INSERT INTO app_settings (key, value) VALUES (?1,?2)
          ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -269,12 +291,18 @@ pub fn set_setting(state: State<DbState>, key: String, value: String) -> Result<
 
 #[tauri::command]
 pub fn get_all_settings(state: State<DbState>) -> HashMap<String, String> {
-    let conn = state.0.lock().unwrap();
-    conn.prepare("SELECT key, value FROM app_settings")
-        .and_then(|mut s| {
-            s.query_map([], |r| Ok((r.get::<_,String>(0)?, r.get::<_,String>(1)?)))
-                .map(|rows| rows.filter_map(|r| r.ok()).collect())
-        }).unwrap_or_default()
+    let conn = match state.0.lock() {
+        Ok(c) => c,
+        Err(_) => return HashMap::new(),
+    };
+    // Exclude sensitive credentials — those are only accessible via their dedicated commands
+    conn.prepare(
+        "SELECT key, value FROM app_settings
+         WHERE key NOT IN ('gdrive_access_token','gdrive_refresh_token','gdrive_client_secret','api_token')"
+    ).and_then(|mut s| {
+        s.query_map([], |r| Ok((r.get::<_,String>(0)?, r.get::<_,String>(1)?)))
+            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+    }).unwrap_or_default()
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

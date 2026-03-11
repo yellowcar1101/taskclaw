@@ -18,9 +18,11 @@
   let showCompleted = false;
   let saving = false;
   let error = '';
+  let loaded = false;
 
-  // Sync draft from view
-  $: if (view) {
+  // Sync draft from view — only on first load, not on every store update
+  $: if (view && !loaded) {
+    loaded = true;
     name = view.name;
     showCompleted = view.show_completed;
     groupBy = view.group_by || 'none';

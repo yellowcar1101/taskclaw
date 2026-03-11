@@ -13,6 +13,17 @@ export interface ParsedTask {
   startDate: string | null;   // YYYY-MM-DD or YYYY-MM-DDTHH:mm
   dueDate: string | null;
   reminderAt: string | null;
+  importance?: number;
+  urgency?: number;
+  effort?: number;
+  timeRequired?: number;      // minutes
+  timeRequiredMax?: number;   // minutes
+  leadTime?: number;          // minutes
+  colorHex?: string;
+  hideInViews?: boolean;
+  subtasksInOrder?: boolean;
+  isProject?: boolean;
+  isFolder?: boolean;
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -29,12 +40,24 @@ export function parseCaption(
   let startDate: string | null = null;
   let dueDate: string | null = null;
   let reminderAt: string | null = null;
+  let importance: number | undefined;
+  let urgency: number | undefined;
+  let effort: number | undefined;
+  let timeRequired: number | undefined;
+  let timeRequiredMax: number | undefined;
+  let leadTime: number | undefined;
+  let colorHex: string | undefined;
+  let hideInViews: boolean | undefined;
+  let subtasksInOrder: boolean | undefined;
+  let isProject: boolean | undefined;
+  let isFolder: boolean | undefined;
 
   // 1. Quoted caption — protect from parsing
   let quotedCaption: string | null = null;
   s = s.replace(/^"([^"]+)"/, (_, q) => { quotedCaption = q; return ''; }).trim();
 
   // 2. Extract tokens
+
   // !FlagName
   s = s.replace(/!(\S+)/g, (_, name) => {
     const flag = findFlag(name, flags);
@@ -42,9 +65,35 @@ export function parseCaption(
     return '';
   });
 
-  // #tag or @tag
+  // -fl=<FlagName> or -fl<FlagName>
+  s = s.replace(/-fl(?:=)?(\S+)/gi, (_, name) => {
+    const flag = findFlag(name, flags);
+    if (flag) flagId = flag.id;
+    return '';
+  });
+
+  // #tag or @tag (single word after #/@)
   s = s.replace(/[#@](\w+)/g, (_, name) => {
-    const tag = findOrNoteTag(name, tags, tagIds);
+    findOrNoteTag(name, tags, tagIds);
+    return '';
+  });
+
+  // context <name1>; <name2>; ... — semicolon-separated context names
+  s = s.replace(/\bcontext\s+([^-][^\n]*)/gi, (_, rest) => {
+    rest.split(/\s*;\s*/).forEach((name: string) => {
+      const trimmed = name.trim();
+      if (trimmed) findOrNoteTag(trimmed, tags, tagIds);
+    });
+    return '';
+  });
+
+  // @name1; @name2  or  @ name1; name2  — multi-context semicolon-separated block
+  // Match an @ followed by a name, then any number of ; (optional @) name continuations
+  s = s.replace(/@\s*[\w][^;@\n]*(?:;\s*@?\s*[\w][^;@\n]*)*/g, (full) => {
+    full.split(';').forEach(part => {
+      const trimmed = part.replace(/^@\s*/, '').trim();
+      if (trimmed) findOrNoteTag(trimmed, tags, tagIds);
+    });
     return '';
   });
 
@@ -52,6 +101,43 @@ export function parseCaption(
   s = s.replace(/\b\*\b/g, () => { starred = true; return ''; });
   // -star or -*
   s = s.replace(/-star\b|-\*/gi, () => { starred = true; return ''; });
+
+  // -i1 to -i5 → importance
+  s = s.replace(/-i([1-5])\b/gi, (_, n) => { importance = parseInt(n); return ''; });
+
+  // -u1 to -u5 → urgency
+  s = s.replace(/-u([1-5])\b/gi, (_, n) => { urgency = parseInt(n); return ''; });
+
+  // -e1 to -e5 → effort
+  s = s.replace(/-e([1-5])\b/gi, (_, n) => { effort = parseInt(n); return ''; });
+
+  // -tmax<time> → time_required_max (must come before -t<time>)
+  s = s.replace(/-tmax(\S+)/gi, (_, t) => { timeRequiredMax = parseTimeExpr(t); return ''; });
+
+  // -t<time> → time_required
+  s = s.replace(/-t(\S+)/gi, (_, t) => { timeRequired = parseTimeExpr(t); return ''; });
+
+  // -l<time> → lead_time
+  s = s.replace(/-l(\S+)/gi, (_, t) => { leadTime = parseTimeExpr(t); return ''; });
+
+  // -p → is_project
+  s = s.replace(/-p\b/gi, () => { isProject = true; return ''; });
+
+  // -f → is_folder
+  s = s.replace(/-f\b/gi, () => { isFolder = true; return ''; });
+
+  // -h → hide_in_views
+  s = s.replace(/-h\b/gi, () => { hideInViews = true; return ''; });
+
+  // -o → subtasks_in_order
+  s = s.replace(/-o\b/gi, () => { subtasksInOrder = true; return ''; });
+
+  // -c=<Color> or -c<Color> → colorHex
+  s = s.replace(/-c(?:=)?([a-z]+)/gi, (_, name) => {
+    const hex = parseColorName(name);
+    if (hex) colorHex = hex;
+    return '';
+  });
 
   // s:<expr> start date
   s = s.replace(/\bs:(\S+(?:\s+\S+)?)/gi, (_, expr) => {
@@ -65,9 +151,19 @@ export function parseCaption(
     return '';
   });
 
-  // -s <expr> start; -d <expr> due
+  // -start <expr> or -s <expr> → start date
+  s = s.replace(/-start\s+(\S+(?:\s+\S+)?)/gi, (_, expr) => {
+    startDate = parseDateExpr(expr);
+    return '';
+  });
   s = s.replace(/-s\s+(\S+(?:\s+\S+)?)/gi, (_, expr) => {
     startDate = parseDateExpr(expr);
+    return '';
+  });
+
+  // -due <expr> or -d <expr> → due date
+  s = s.replace(/-due\s+(\S+(?:\s+\S+)?)/gi, (_, expr) => {
+    dueDate = parseDateExpr(expr);
     return '';
   });
   s = s.replace(/-d\s+(\S+(?:\s+\S+)?)/gi, (_, expr) => {
@@ -76,7 +172,7 @@ export function parseCaption(
   });
 
   // 3. remind / rmd <expr>
-  s = s.replace(/\b(?:remind|rmd)\s+(.+)/i, (_, expr) => {
+  s = s.replace(/\b(?:remind(?:\s+me)?|rmd)\s+(.+)/i, (_, expr) => {
     reminderAt = parseReminderExpr(expr.trim(), dueDate);
     return '';
   });
@@ -88,7 +184,19 @@ export function parseCaption(
   }
 
   const caption = quotedCaption ?? s.replace(/\s+/g, ' ').trim();
-  return { caption: caption || raw.trim(), flagId, tagIds, starred, startDate, dueDate, reminderAt };
+  const result: ParsedTask = { caption: caption || raw.trim(), flagId, tagIds, starred, startDate, dueDate, reminderAt };
+  if (importance !== undefined) result.importance = importance;
+  if (urgency !== undefined) result.urgency = urgency;
+  if (effort !== undefined) result.effort = effort;
+  if (timeRequired !== undefined) result.timeRequired = timeRequired;
+  if (timeRequiredMax !== undefined) result.timeRequiredMax = timeRequiredMax;
+  if (leadTime !== undefined) result.leadTime = leadTime;
+  if (colorHex !== undefined) result.colorHex = colorHex;
+  if (hideInViews !== undefined) result.hideInViews = hideInViews;
+  if (subtasksInOrder !== undefined) result.subtasksInOrder = subtasksInOrder;
+  if (isProject !== undefined) result.isProject = isProject;
+  if (isFolder !== undefined) result.isFolder = isFolder;
+  return result;
 }
 
 // ── Date expression parser ────────────────────────────────────────────────────
@@ -112,6 +220,12 @@ export function parseDateExpr(expr: string): string | null {
     const unit = relShort[2];
     const d = addDays(today, unit === 'w' ? n * 7 : n);
     return fmtDate(d);
+  }
+
+  // now → current datetime
+  if (expr === 'now') {
+    const n = new Date();
+    return `${fmtDate(n)}T${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`;
   }
 
   // Extract time suffix
@@ -139,15 +253,52 @@ export function parseDateExpr(expr: string): string | null {
   else if (rest === 'tomorrow') date = addDays(today, 1);
   else if (rest === 'yesterday') date = addDays(today, -1);
   else if (/^next\s+/.test(rest)) {
-    const day = rest.replace(/^next\s+/, '');
-    const wd = parseWeekday(day);
-    if (wd !== null) date = nextWeekday(today, wd, true);
+    const afterNext = rest.replace(/^next\s+/, '');
+    // "next year"
+    if (afterNext === 'year') {
+      date = new Date(today.getFullYear() + 1, 0, 1);
+    } else {
+      const wd = parseWeekday(afterNext);
+      if (wd !== null) date = nextWeekday(today, wd, true);
+    }
   } else {
     const wd = parseWeekday(rest);
     if (wd !== null) date = nextWeekday(today, wd, false);
   }
 
-  // in N days/weeks/months
+  // today in 1h 25min — "today" anchor with hour/min offset
+  if (!date && /^today\s+in\s+/i.test(rest)) {
+    const offsetPart = rest.replace(/^today\s+in\s+/i, '');
+    const mins = parseHourMinOffset(offsetPart);
+    if (mins !== null) {
+      const n = new Date();
+      n.setSeconds(0, 0);
+      n.setMinutes(n.getMinutes() + mins);
+      return `${fmtDate(n)}T${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`;
+    }
+  }
+
+  // in N min / in N minutes → relative minutes from now
+  if (!date) {
+    const inMinMatch = rest.match(/^in\s+(\d+)\s*min(?:utes?)?$/i);
+    if (inMinMatch) {
+      const n = new Date();
+      n.setSeconds(0, 0);
+      n.setMinutes(n.getMinutes() + parseInt(inMinMatch[1]));
+      return `${fmtDate(n)}T${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`;
+    }
+  }
+
+  // in N years / in Ny
+  if (!date) {
+    const inYearMatch = rest.match(/^in\s+(\d+)\s*y(?:ears?)?$/i);
+    if (inYearMatch) {
+      date = new Date(today);
+      date.setFullYear(date.getFullYear() + parseInt(inYearMatch[1]));
+    }
+  }
+
+  // in N days/weeks/months (simple single-unit)
   if (!date) {
     const inMatch = rest.match(/^in\s+(\d+)\s+(day|week|month)s?$/i);
     if (inMatch) {
@@ -162,18 +313,93 @@ export function parseDateExpr(expr: string): string | null {
     }
   }
 
-  // Month name + day: jan 26, january 26
+  // compound: in 2 months 1 week 4 days / in 1 m 2 w 1 d
   if (!date) {
-    const monMatch = rest.match(/^(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})$/i);
+    const compoundMatch = rest.match(/^in\s+(.+)$/i);
+    if (compoundMatch) {
+      const parts = compoundMatch[1];
+      let months = 0, weeks = 0, days = 0;
+      const mM = parts.match(/(\d+)\s*m(?:onths?)?(?:\s|$)/i);
+      const mW = parts.match(/(\d+)\s*w(?:eeks?)?(?:\s|$)/i);
+      const mD = parts.match(/(\d+)\s*d(?:ays?)?(?:\s|$)/i);
+      if (mM) months = parseInt(mM[1]);
+      if (mW) weeks = parseInt(mW[1]);
+      if (mD) days = parseInt(mD[1]);
+      if (months || weeks || days) {
+        date = new Date(today);
+        if (months) date.setMonth(date.getMonth() + months);
+        if (weeks) date = addDays(date, weeks * 7);
+        if (days) date = addDays(date, days);
+      }
+    }
+  }
+
+  // in N weeks <Weekday> — find weekday after N weeks
+  if (!date) {
+    const inWeeksWdMatch = rest.match(/^in\s+(\d+)\s+weeks?\s+(\w+)$/i);
+    if (inWeeksWdMatch) {
+      const n = parseInt(inWeeksWdMatch[1]);
+      const wd = parseWeekday(inWeeksWdMatch[2]);
+      if (wd !== null) {
+        const anchor = addDays(today, n * 7);
+        date = nextWeekday(anchor, wd, false);
+      }
+    }
+  }
+
+  // <Weekday> <HH:mm> — e.g. "Tue 11:20" (time already extracted above; rest is just weekday)
+  if (!date) {
+    const wdOnly = parseWeekday(rest);
+    if (wdOnly !== null) date = nextWeekday(today, wdOnly, false);
+  }
+
+  // Month name + day (with optional ordinal suffix): jan 26, january 26, August 26th, Nov 26 08
+  if (!date) {
+    const monMatch = rest.match(/^(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s+(\d{2,4}))?$/i);
     if (monMatch) {
       const monthIdx = parseMonthName(monMatch[1]);
       const day = parseInt(monMatch[2]);
+      let year = today.getFullYear();
+      if (monMatch[3]) {
+        const y = parseInt(monMatch[3]);
+        year = y < 100 ? 2000 + y : y;
+      }
+      date = new Date(year, monthIdx, day);
+      if (!monMatch[3] && date <= today) date.setFullYear(date.getFullYear() + 1);
+    }
+  }
+
+  // Jan26 / Aug26 compact form (no space)
+  if (!date) {
+    const compactMon = rest.match(/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)(\d{1,2})(?:st|nd|rd|th)?$/i);
+    if (compactMon) {
+      const monthIdx = parseMonthName(compactMon[1]);
+      const day = parseInt(compactMon[2]);
       date = new Date(today.getFullYear(), monthIdx, day);
       if (date <= today) date.setFullYear(date.getFullYear() + 1);
     }
   }
 
-  // 3/15 format
+  // MDY: 3-26-2008 or 3/26/2008
+  if (!date) {
+    const mdyMatch = rest.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})$/);
+    if (mdyMatch) {
+      const a = parseInt(mdyMatch[1]);
+      const b = parseInt(mdyMatch[2]);
+      let y = parseInt(mdyMatch[3]);
+      if (y < 100) y += 2000;
+      // Heuristic: if first number > 12, it must be day (DMY); else treat as MDY
+      if (a > 12) {
+        // DMY
+        date = new Date(y, b - 1, a);
+      } else {
+        // MDY
+        date = new Date(y, a - 1, b);
+      }
+    }
+  }
+
+  // 3/15 format (no year)
   if (!date) {
     const slashMatch = rest.match(/^(\d{1,2})\/(\d{1,2})$/);
     if (slashMatch) {
@@ -231,14 +457,20 @@ function parseReminderExpr(expr: string, dueDate: string | null): string | null 
 function extractNlpDate(s: string): { text: string, date: string | null } {
   // Try matching from the right side of the string
   const patterns = [
-    // "in N days", "in N weeks", etc.
-    /\bin\s+\d+\s+(?:day|week|month)s?\b/i,
+    // "in N weeks Weekday"
+    /\bin\s+\d+\s+weeks?\s+\w+\b/i,
+    // "in N days", "in N weeks", "in N months", "in N years"
+    /\bin\s+\d+\s+(?:day|week|month|year)s?\b/i,
+    // "in N min/minutes"
+    /\bin\s+\d+\s*min(?:utes?)?\b/i,
+    // compound: "in 2 months 1 week 4 days"
+    /\bin\s+(?:\d+\s*(?:months?|m)\s*)?(?:\d+\s*(?:weeks?|w)\s*)?(?:\d+\s*(?:days?|d))?\b/i,
     // Weekday possibly with "next"
     /\b(?:next\s+)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,
     // "tomorrow", "today"
     /\btomorrow\b|\btoday\b/i,
-    // month day
-    /\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}\b/i,
+    // month day (with optional ordinal)
+    /\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?\b/i,
     // ISO date
     /\b\d{4}-\d{2}-\d{2}\b/,
     // +Nd
@@ -256,6 +488,43 @@ function extractNlpDate(s: string): { text: string, date: string | null } {
     }
   }
   return { text: s, date: null };
+}
+
+// ── Time duration parser (for -t, -l switches) ────────────────────────────────
+
+function parseTimeExpr(s: string): number {
+  // Formats: 10 → 10 min, 2h15min → 135, 2h15m → 135, 1h → 60, 30m → 30
+  let mins = 0;
+  const hMatch = s.match(/(\d+)\s*h/i);
+  const mMatch = s.match(/(\d+)\s*m(?:in)?(?!\w)/i);
+  if (hMatch) mins += parseInt(hMatch[1]) * 60;
+  if (mMatch) mins += parseInt(mMatch[1]);
+  // pure number → minutes
+  if (!hMatch && !mMatch) mins = parseInt(s) || 0;
+  return mins;
+}
+
+// ── Hour+minute offset parser (for "today in 1h 25min") ───────────────────────
+
+function parseHourMinOffset(s: string): number | null {
+  let mins = 0;
+  let found = false;
+  const hMatch = s.match(/(\d+)\s*h(?:ours?)?/i);
+  const mMatch = s.match(/(\d+)\s*min(?:utes?)?/i);
+  if (hMatch) { mins += parseInt(hMatch[1]) * 60; found = true; }
+  if (mMatch) { mins += parseInt(mMatch[1]); found = true; }
+  return found ? mins : null;
+}
+
+// ── Color name → hex ──────────────────────────────────────────────────────────
+
+function parseColorName(name: string): string | null {
+  const colors: Record<string, string> = {
+    red: '#FF3333', green: '#33CC33', blue: '#3366FF',
+    yellow: '#FFFF33', orange: '#FF9933', purple: '#9933FF',
+    pink: '#FF33AA', cyan: '#33CCFF', grey: '#999999', gray: '#999999',
+  };
+  return colors[name.toLowerCase()] ?? null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -331,7 +600,7 @@ export function parseRapidInput(text: string, flags: Flag[], tags: Tag[], applyP
     const indent = stripped.length - stripped.trimStart().length;
     const depth = indentUnit > 0 ? Math.floor(indent / indentUnit) : 0;
     const raw = stripped.trimStart();
-    const parsed = applyParsing ? parseCaption(raw, flags, tags) : { caption: raw, flagId: null, tagIds: [], starred: false, startDate: null, dueDate: null, reminderAt: null };
+    const parsed = applyParsing ? parseCaption(raw, flags, tags) : { caption: raw, flagId: null, tagIds: [], starred: false, startDate: null, dueDate: null, reminderAt: null } as ParsedTask;
     return { depth, raw, parsed };
   });
 }

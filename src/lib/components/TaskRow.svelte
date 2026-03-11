@@ -3,8 +3,8 @@
   import type { Task } from '../types';
   import {
     expanded, selected, editingId, contextMenu,
-    toggleExpanded, setSelected, updateTask,
-    completeTask, createTask,
+    toggleExpanded, setSelected, setSelectedRange, updateTask,
+    completeTask, createTask, reorderTasks,
     outlineScrollToId, flags, tags, childrenOf
   } from '../stores/tasks';
   import { parseCaption } from '../parsing';
@@ -24,7 +24,8 @@
   $: isExpanded = $expanded.has(task.id);
   $: isSelected = $selected.has(task.id);
   $: isEditing = $editingId === task.id;
-  $: if (isEditing) tick().then(() => inputEl?.focus());
+  $: if (isEditing) { editValue = editValue || task.caption; tick().then(() => inputEl?.focus()); }
+  $: if (!isEditing) { editValue = ''; }
   $: children = isExpanded ? ($childrenOf.get(task.id) ?? []) : [];
 
 
@@ -64,6 +65,11 @@
       if (parsed.startDate) updates.start_date = parsed.startDate;
       if (parsed.dueDate) updates.due_date = parsed.dueDate;
       if (parsed.reminderAt) updates.reminder_at = parsed.reminderAt;
+      if (parsed.hideInViews !== undefined) updates.hide_in_views = parsed.hideInViews;
+      if (parsed.subtasksInOrder !== undefined) updates.subtasks_in_order = parsed.subtasksInOrder;
+      if (parsed.isProject !== undefined) updates.is_project = parsed.isProject;
+      if (parsed.isFolder !== undefined) updates.is_folder = parsed.isFolder;
+      if (parsed.colorHex !== undefined) updates.color = parsed.colorHex;
       updateTask(task.id, updates as any);
       editingId.set(null);
       return;
@@ -78,7 +84,11 @@
   }
 
   function onClick(e: MouseEvent) {
-    setSelected(task.id, e.ctrlKey || e.metaKey);
+    if (e.shiftKey) {
+      setSelectedRange(task.id);
+    } else {
+      setSelected(task.id, e.ctrlKey || e.metaKey);
+    }
   }
 
   function onContextMenu(e: MouseEvent) {
@@ -248,11 +258,13 @@
     </div>
   {/if}
 
-  <!-- Tags column — dots only -->
+  <!-- Tags column — name labels -->
   {#if visibleCols.has('tags')}
     <div class="col-tags">
-      {#each task.tags.slice(0, 4) as tag}
-        <span class="col-dot" style="background:{tag.color}" title={tag.name}></span>
+      {#each task.tags.slice(0, 3) as tag}
+        <span class="col-tag-label" style="background:{tag.color}22;color:{tag.color};border-color:{tag.color}55" title={tag.name}>
+          {tag.name}
+        </span>
       {/each}
     </div>
   {/if}
@@ -418,13 +430,24 @@
     justify-content: center;
   }
   .col-tags {
-    width: var(--col-tags-width, 52px);
+    width: var(--col-tags-width, 100px);
     order: var(--col-tags-order, 13);
     flex-shrink: 0;
     display: flex;
     align-items: center;
     gap: 3px;
-    justify-content: center;
+    overflow: hidden;
+  }
+  .col-tag-label {
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 8px;
+    border: 1px solid;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 60px;
+    flex-shrink: 0;
   }
   .col-dot {
     width: 8px;
