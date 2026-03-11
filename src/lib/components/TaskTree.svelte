@@ -3,12 +3,10 @@
   import TaskRow from './TaskRow.svelte';
   import {
     rootTasks, sortField, sortDir, toggleSort,
-    filterFlagId, flags, searchQuery,
     expandAll, collapseAll, clearSelection, createTask, editingId,
-    showRapidInput, selected, allTasks, taskById, expanded,
+    showRapidInput, selected, taskById, expanded,
     moveTask, reorderTasks, deleteTask, childrenOf
   } from '../stores/tasks';
-  import type { Task } from '../types';
 
   // ── Selected task context ─────────────────────────────────────────────────
   $: selectedId = $selected.size === 1 ? [...$selected][0] : null;

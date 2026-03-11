@@ -3,8 +3,8 @@
   import type { Task } from '../types';
   import {
     expanded, selected, editingId, contextMenu,
-    toggleExpanded, setSelected, updateTask, deleteTask,
-    completeTask, moveTask, getChildren, reorderTasks, createTask,
+    toggleExpanded, setSelected, updateTask,
+    completeTask, createTask,
     outlineScrollToId, flags, tags
   } from '../stores/tasks';
   import { parseCaption } from '../parsing';
@@ -26,7 +26,7 @@
   $: isEditing = $editingId === task.id;
   $: if (isEditing) tick().then(() => inputEl?.focus());
   $: children = isExpanded ? getChildren(task.id) : [];
-  $: myIndex = siblings.findIndex(s => s.id === task.id);
+
 
   // Scroll-flash: watch outlineScrollToId
   $: if ($outlineScrollToId === task.id) {
@@ -84,40 +84,6 @@
   function onContextMenu(e: MouseEvent) {
     e.preventDefault();
     contextMenu.set({ x: e.clientX, y: e.clientY, taskId: task.id });
-  }
-
-  async function onIndent() {
-    const prev = siblings[myIndex - 1];
-    if (!prev) return;
-    const prevChildren = getChildren(prev.id);
-    const newPos = prevChildren.length > 0
-      ? prevChildren[prevChildren.length - 1].position + 1000
-      : 1000;
-    expanded.update(s => { const n = new Set(s); n.add(prev.id); return n; });
-    await moveTask(task.id, prev.id, newPos);
-  }
-
-  async function onOutdent() {
-    if (!task.parent_id) return;
-    await moveTask(task.id, null, task.position + 0.5);
-  }
-
-  async function onMoveUp() {
-    if (myIndex <= 0) return;
-    const prev = siblings[myIndex - 1];
-    await reorderTasks([[task.id, prev.position - 0.5]]);
-  }
-
-  async function onMoveDown() {
-    if (myIndex >= siblings.length - 1) return;
-    const next = siblings[myIndex + 1];
-    await reorderTasks([[task.id, next.position + 0.5]]);
-  }
-
-  async function onDelete() {
-    if (confirm(`Delete "${task.caption}"${task.has_children ? ' and all subtasks' : ''}?`)) {
-      await deleteTask(task.id);
-    }
   }
 
   async function onComplete() {
