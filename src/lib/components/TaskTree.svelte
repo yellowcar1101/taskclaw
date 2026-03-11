@@ -20,8 +20,18 @@
   $: hasSelected = !!selectedTask;
 
   async function addRootTask() {
-    const t = await createTask({ parent_id: null, caption: 'New task' });
-    editingId.set(t.id);
+    // If a task is selected, create a sibling (same parent, positioned after it)
+    if (selectedTask) {
+      const t = await createTask({
+        parent_id: selectedTask.parent_id ?? undefined,
+        caption: 'New task',
+        position: selectedTask.position + 0.5,
+      });
+      editingId.set(t.id);
+    } else {
+      const t = await createTask({ parent_id: null, caption: 'New task' });
+      editingId.set(t.id);
+    }
   }
 
   async function addSubtask() {
