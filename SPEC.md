@@ -1,6 +1,6 @@
 # TaskClaw — Full Product Specification
 
-> Version: 2.0 | Status: Pre-development
+> Version: 2.0 | App version: 0.3.0 | Status: Phase 2 complete — active development
 > Audience: Senior developer. This document is the single source of truth. Build exactly what is described; do not add features not listed; do not omit features that are listed.
 
 ---
@@ -2253,21 +2253,69 @@ When implemented:
 
 Build and test one feature at a time. Do not proceed to the next until the current one builds successfully, is pushed, and the user confirms it runs.
 
-| Step | Feature | Rust changes | Frontend changes | Test |
+| Step | Feature | Rust changes | Frontend changes | Status |
 |---|---|---|---|---|
-| 1 | Theme & CSS variables | — | `app.css` | Visual check |
-| 2 | Data model refactor | `types.rs`, `db.rs`, `commands/` | `api.ts`, `types.ts`, stores | Create/read tasks |
-| 3 | Portable DB path | `db.rs` | Prefs path display | Check `Data/tasks.db` location |
-| 4 | UI layout (tabs, detail panel, views panel) | — | All layout components | Navigation works |
-| 5 | TaskRow interactions (click model, hover actions, DnD) | — | `TaskRow.svelte` | All click targets |
-| 6 | Right-click context menu | `commands/tasks.rs` (new commands) | `ContextMenu.svelte` | All menu items |
-| 7 | Cross-view selection sync | stores | `TaskRow`, `GroupedView` | Select in view, see in outline |
-| 8 | Task Detail panel (full redesign) | — | `TaskDetail.svelte` + subsections | All sections |
-| 9 | Date + time fields | — | `TaskDetail.svelte` | Save date+time, auto-fill |
-| 10 | Reminders | — | `TaskDetail`, `ReminderWindow` | Reminder fires, snooze works |
-| 11 | Recurrence | `types.rs`, `db.rs`, `commands/` | `RecurrenceModal.svelte` | Create recurring task, complete it |
-| 12 | Rapid Input | — | `RapidInput.svelte` | Paste hierarchy, import |
-| 13 | Alt+Enter inline parsing | — | `TaskRow.svelte` | Type with tokens, Alt+Enter |
-| 14 | NLP date parser | — | `parsing.ts` | Various date strings |
-| 15 | Sync improvements | `commands/sync.rs` | `SyncBar`, `ConflictModal`, Prefs | Connect, upload, conflict |
-| 16 | Encryption | `Cargo.toml`, `db.rs`, `commands/` | `LockScreen`, Prefs | Set password, reopen |
+| 1 | Theme & CSS variables | — | `app.css` | ✅ Done |
+| 2 | Data model refactor | `types.rs`, `db.rs`, `commands/` | `api.ts`, `types.ts`, stores | ✅ Done |
+| 3 | Portable DB path | `db.rs` | Prefs path display | ✅ Done |
+| 4 | UI layout (tabs, detail panel, views panel) | — | All layout components | ✅ Done |
+| 5 | TaskRow interactions (click model, hover actions, DnD) | — | `TaskRow.svelte` | ✅ Done |
+| 6 | Right-click context menu | `commands/tasks.rs` (new commands) | `ContextMenu.svelte` | ✅ Done |
+| 7 | Cross-view selection sync | stores | `TaskRow`, `GroupedView` | ✅ Done |
+| 8 | Task Detail panel (full redesign) | — | `TaskDetail.svelte` + subsections | ✅ Done |
+| 9 | Date + time fields | — | `TaskDetail.svelte` | ✅ Done |
+| 10 | Reminders | — | `TaskDetail`, `ReminderWindow` | ✅ Done |
+| 11 | Recurrence | `types.rs`, `db.rs`, `commands/` | `RecurrenceDialog.svelte` | ✅ Done |
+| 12 | Rapid Input | — | `RapidInput.svelte` | ✅ Done |
+| 13 | Alt+Enter inline parsing | — | `TaskRow.svelte` | ✅ Done |
+| 14 | NLP date parser | — | `parsing.ts` | ✅ Done |
+| 15 | GDrive OAuth sync + Web API + PlanView + ViewSettings + Prefs tabs | `commands/sync.rs`, `commands/webapi.rs`, `commands/files.rs` | `Prefs.svelte`, `PlanView.svelte`, `ViewSettingsDialog.svelte`, `SyncBar` | ✅ Done |
+| 16 | Encryption | `Cargo.toml`, `db.rs`, `commands/` | `LockScreen`, Prefs | ⏸ Parked — see §22 |
+
+### Parked features (not yet scheduled)
+
+| Feature | Notes |
+|---|---|
+| Recurrence modal UI polish | Basic modal works; advanced options modal not yet built |
+| Next Actions grouped display | Grouped view tab exists but Next Actions grouping not implemented |
+| DB file permissions (Unix) | `0o600` chmod on DB creation — low priority, Windows primary target |
+
+---
+
+## 25. QA & Security Audit Log
+
+### 25.1 QA Review — 2026-03-11 (commit `c7305e2`)
+
+Reviewed against `94bd804`. GitHub issue: [#1](https://github.com/yellowcar1101/taskclaw/issues/1)
+
+| ID | Severity | Finding | Remediation |
+|---|---|---|---|
+| QA-1 | Medium | Store subscription leaks in `TaskTree.svelte` | Fixed — `onDestroy` cleanup added |
+| QA-2 | Medium | Store subscription leaks in `PlanView.svelte` | Fixed — `onDestroy` cleanup added |
+| QA-3 | Medium | `RecurrenceDialog.svelte` reactive statement reset monthly mode incorrectly | Fixed — removed inverted reactive block |
+| QA-4 | Low | Recurrence interval unbounded — extreme date offsets possible | Fixed — clamped to `.min(9999)` |
+| QA-5 | Info | `contexts.rs` dead code (not in `mod.rs`) | No action — leave for cleanup |
+| QA-6 | Info | 2 pre-existing TypeScript errors (pre-date this review) | Not introduced by this work |
+
+### 25.2 Security Audit — 2026-03-11 (commit `c7305e2`)
+
+Reviewed against `94bd804`. GitHub issue: [#2](https://github.com/yellowcar1101/taskclaw/issues/2)
+
+| ID | Severity | Finding | Remediation |
+|---|---|---|---|
+| CRIT-1 | Critical | SQL injection in Web API `GET /tasks/:id` | Fixed — parameterized query |
+| CRIT-2 | Critical | Web API startable with no token set | Fixed — token required before start |
+| CRIT-3 | Critical | XSS in `TaskDetail` markdown renderer via `javascript:` URLs | Fixed — scheme allowlist (https?/mailto only) |
+| HIGH-1 | High | `set_setting` accepted arbitrary keys (including credential keys) | Fixed — `ALLOWED_SETTING_KEYS` allowlist |
+| HIGH-2 | High | Web API had no connection limit or read timeout | Fixed — max 50 connections, 5s read timeout |
+| HIGH-3 | High | `lock().unwrap()` throughout all command files — mutex poison crashes process | Fixed — `map_err()?` or `match` pattern everywhere |
+| HIGH-4 | High | No file extension validation on DB open/new/save paths | Fixed — `.db` extension enforced |
+| HIGH-5 | High | No CSRF state in GDrive OAuth flow | Fixed — `uuid` state in `AuthInfo`, verified in `gdrive_wait_auth` |
+| MED-3 | Medium | Recurrence interval unbounded (integer overflow) | Fixed — see QA-4 |
+| MED-4 | Medium | No request body size limit in Web API | Fixed — 1MB cap |
+| MED-5 | Medium | Web API CORS `Allow-Origin: *` | Fixed — restricted to `http://localhost` |
+| MED-6 | Medium | `unwrap()` in `build_sync_payload` inner query | Fixed — `match`/`unwrap_or` |
+| MED-7 | Medium | No CSP in `tauri.conf.json` | Fixed — restrictive CSP added |
+| LOW-1 | Low | No Unix file permissions on DB file (0o600) | ⏸ Parked |
+| LOW-2 | Low | `get_all_settings` returned credential keys to frontend | Fixed — credential keys excluded from query |
+| LOW-5 | Low | No TCP read timeout on OAuth redirect listener | ⏸ Parked |
