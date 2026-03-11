@@ -5,7 +5,7 @@
   import ColorPicker from './ColorPicker.svelte';
   import type { Flag, Tag } from '../types';
 
-  let activeTab: 'flags' | 'tags' | 'app' | 'sync' | 'api' = 'flags';
+  let activeTab: 'general' | 'flags' | 'tags' | 'app' | 'sync' | 'api' = 'general';
   let error = '';
 
   // ── App appearance settings ──────────────────────────────────────────────────
@@ -52,6 +52,35 @@
   onMount(() => { applyAppearance(); });
 
   $: { appFont; appFontSize; appCompact; appTaskColor; applyAppearance(); }
+
+  // ── General / Startup settings ────────────────────────────────────────────
+  let rememberPosition = false;
+  let singleInstance = true;
+  let generalMsg = '';
+
+  async function loadGeneralSettings() {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const cfg = await invoke<{ remember_position: boolean; single_instance: boolean }>('get_startup_config');
+      rememberPosition = cfg.remember_position;
+      singleInstance = cfg.single_instance;
+    } catch {}
+  }
+
+  async function saveGeneralSettings() {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('save_startup_config', { config: { remember_position: rememberPosition, single_instance: singleInstance } });
+      // mirror remember_position to localStorage so +page.svelte can read it for the beforeunload handler
+      localStorage.setItem('startup_remember_position', String(rememberPosition));
+      generalMsg = 'Saved. Restart required for single-instance changes.';
+      setTimeout(() => generalMsg = '', 4000);
+    } catch (e: any) {
+      generalMsg = 'Error: ' + (e?.message ?? String(e));
+    }
+  }
+
+  onMount(loadGeneralSettings);
 
   // ── Folder Sync ───────────────────────────────────────────────────────────────
   let syncFolder: string | null = null;
@@ -252,11 +281,12 @@
 
     <!-- Tabs -->
     <div class="tabs">
-      <button class="tab" class:active={activeTab === 'flags'} on:click={() => activeTab = 'flags'}>Flags</button>
-      <button class="tab" class:active={activeTab === 'tags'}  on:click={() => activeTab = 'tags'}>Tags</button>
-      <button class="tab" class:active={activeTab === 'app'}   on:click={() => activeTab = 'app'}>Appearance</button>
-      <button class="tab" class:active={activeTab === 'sync'}  on:click={() => activeTab = 'sync'}>Sync</button>
-      <button class="tab" class:active={activeTab === 'api'}   on:click={() => activeTab = 'api'}>API</button>
+      <button class="tab" class:active={activeTab === 'general'} on:click={() => activeTab = 'general'}>General</button>
+      <button class="tab" class:active={activeTab === 'flags'}   on:click={() => activeTab = 'flags'}>Flags</button>
+      <button class="tab" class:active={activeTab === 'tags'}    on:click={() => activeTab = 'tags'}>Tags</button>
+      <button class="tab" class:active={activeTab === 'app'}     on:click={() => activeTab = 'app'}>Appearance</button>
+      <button class="tab" class:active={activeTab === 'sync'}    on:click={() => activeTab = 'sync'}>Sync</button>
+      <button class="tab" class:active={activeTab === 'api'}     on:click={() => activeTab = 'api'}>API</button>
     </div>
 
     {#if error}
@@ -265,6 +295,47 @@
 
     <!-- Body -->
     <div class="modal-body">
+
+      <!-- GENERAL TAB -->
+      {#if activeTab === 'general'}
+        <div class="section-hint">These settings take effect on next launch.</div>
+
+        <div class="info-row">
+          <span class="info-label">Remember window position</span>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer">
+            <input type="checkbox" bind:checked={rememberPosition} style="accent-color:var(--accent)"
+              on:change={saveGeneralSettings} />
+            Save and restore size & position on startup
+          </label>
+        </div>
+
+        <div class="info-row">
+          <span class="info-label">Single instance</span>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer">
+            <input type="checkbox" bind:checked={singleInstance} style="accent-color:var(--accent)"
+              on:change={saveGeneralSettings} />
+            Prevent more than one copy running at a time
+          </label>
+        </div>
+
+        <div class="section-hint" style="margin-top:6px">
+          When single instance is on, launching a second copy focuses the existing window instead.
+          When off, multiple windows can run simultaneously (useful for side-by-side comparisons — note they all share the same database).
+        </div>
+
+        {#if generalMsg}
+          <div class="sync-msg" class:err={generalMsg.startsWith('Error')} style="margin-top:8px">{generalMsg}</div>
+        {/if}
+
+        <div class="info-row" style="margin-top:16px">
+          <span class="info-label">Version</span>
+          <span class="info-value">TaskClaw 0.3.0</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Data</span>
+          <span class="info-value dim">./Data/ (portable)</span>
+        </div>
+      {/if}
 
       <!-- FLAGS TAB -->
       {#if activeTab === 'flags'}
@@ -395,14 +466,6 @@
           </div>
         </div>
 
-        <div class="info-row" style="margin-top:16px">
-          <span class="info-label">Version</span>
-          <span class="info-value">TaskClaw 0.3.0</span>
-        </div>
-        <div class="info-row">
-          <span class="info-label">Data</span>
-          <span class="info-value dim">./Data/tasks.db (portable)</span>
-        </div>
       {/if}
 
       <!-- SYNC TAB -->

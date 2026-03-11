@@ -1,12 +1,16 @@
 use rusqlite::{Connection, Result, params};
 use std::path::PathBuf;
 
-pub fn db_path() -> PathBuf {
+pub fn data_dir() -> PathBuf {
     let exe = std::env::current_exe().expect("cannot resolve exe path");
     let dir = exe.parent().expect("exe has no parent dir");
     let data = dir.join("Data");
     std::fs::create_dir_all(&data).ok();
-    data.join("tasks.db")
+    data
+}
+
+pub fn db_path() -> PathBuf {
+    data_dir().join("tasks.db")
 }
 
 pub fn open() -> Result<Connection> {

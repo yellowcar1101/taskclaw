@@ -6,6 +6,7 @@
 
   let rawText = '';
   let applyParsing = true;
+  let showHelp = false;
   let parentId: string | null = null;
   let parentSearch = '';
   let importing = false;
@@ -159,12 +160,70 @@
       </div>
     </div>
 
+    <!-- Inline help panel -->
+    {#if showHelp}
+      <div class="help-panel">
+        <div class="help-cols">
+          <div class="help-col">
+            <div class="help-heading">Metadata tokens</div>
+            <table class="help-table">
+              <tr><td><code>!FlagName</code></td><td>Assign a flag (partial match)</td></tr>
+              <tr><td><code>#tag</code> or <code>@tag</code></td><td>Assign a tag</td></tr>
+              <tr><td><code>*</code> or <code>-star</code></td><td>Mark as starred / priority</td></tr>
+              <tr><td><code>"quoted caption"</code></td><td>Protect caption from token parsing</td></tr>
+            </table>
+
+            <div class="help-heading" style="margin-top:10px">Dates — prefix tokens</div>
+            <table class="help-table">
+              <tr><td><code>s:date</code> or <code>-s date</code></td><td>Start date</td></tr>
+              <tr><td><code>d:date</code> or <code>-d date</code></td><td>Due date</td></tr>
+              <tr><td><code>remind N min before</code></td><td>Reminder N minutes before due</td></tr>
+              <tr><td><code>remind N hours before</code></td><td>Reminder N hours before due</td></tr>
+              <tr><td><code>remind at tomorrow 3pm</code></td><td>Absolute reminder</td></tr>
+            </table>
+          </div>
+          <div class="help-col">
+            <div class="help-heading">Date expressions</div>
+            <table class="help-table">
+              <tr><td><code>today</code> / <code>tomorrow</code></td><td>Relative days</td></tr>
+              <tr><td><code>monday</code> … <code>sunday</code></td><td>Next occurrence of weekday</td></tr>
+              <tr><td><code>next monday</code></td><td>Force next week's Monday</td></tr>
+              <tr><td><code>in 3 days</code> / <code>in 2 weeks</code></td><td>Relative offset</td></tr>
+              <tr><td><code>in 1 month</code></td><td>Calendar month forward</td></tr>
+              <tr><td><code>jan 15</code> / <code>3/15</code></td><td>Month + day (next occurrence)</td></tr>
+              <tr><td><code>2026-04-01</code></td><td>ISO date</td></tr>
+              <tr><td><code>+3d</code> / <code>+2w</code></td><td>Shorthand +N days / weeks</td></tr>
+            </table>
+
+            <div class="help-heading" style="margin-top:10px">Time (append to any date)</div>
+            <table class="help-table">
+              <tr><td><code>… at 2pm</code></td><td>12-hour with meridiem</td></tr>
+              <tr><td><code>… at 14:00</code></td><td>24-hour</td></tr>
+            </table>
+
+            <div class="help-heading" style="margin-top:10px">Structure</div>
+            <table class="help-table">
+              <tr><td>Indent with spaces or tabs</td><td>Creates subtasks</td></tr>
+              <tr><td>Bare date at end of line</td><td>Auto-detected as due date</td></tr>
+            </table>
+          </div>
+        </div>
+        <div class="help-example">
+          <span class="help-heading">Example</span>
+          <pre>Project Alpha d:next friday !Urgent
+  Write spec s:monday d:wednesday #dev
+  Review doc remind 30 min before *
+  "Deploy to prod" d:3/28 at 9am</pre>
+        </div>
+      </div>
+    {/if}
+
     <!-- Footer -->
     <div class="modal-footer">
-      <div class="syntax-hint">
-        Syntax: <code>!Flag</code> <code>#tag</code> <code>*</code> (star) <code>s:date</code> <code>d:date</code> <code>remind N min before</code>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center">
+      <button class="help-toggle" class:active={showHelp} on:click={() => showHelp = !showHelp} title="Show parsing reference">
+        ? Help
+      </button>
+      <div style="display:flex;gap:8px;align-items:center;margin-left:auto">
         {#if error}<span class="err">{error}</span>{/if}
         <button class="cancel-btn" on:click={close}>Cancel</button>
         <button class="import-btn" on:click={doImport} disabled={importing || parsedLines.length === 0}>
@@ -328,8 +387,62 @@
     flex-shrink: 0;
     gap: 12px;
   }
-  .syntax-hint { font-size: 11px; color: var(--text-dim); }
-  .syntax-hint code { background: var(--input-bg); padding: 1px 4px; border-radius: 2px; }
+  /* ── Help panel ── */
+  .help-panel {
+    border-top: 1px solid var(--border);
+    background: var(--surface-elevated);
+    padding: 12px 16px 8px;
+    flex-shrink: 0;
+    overflow-y: auto;
+    max-height: 260px;
+  }
+  .help-cols {
+    display: flex;
+    gap: 24px;
+  }
+  .help-col { flex: 1; min-width: 0; }
+  .help-heading {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--accent);
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .help-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+  }
+  .help-table td { padding: 2px 4px; vertical-align: top; color: var(--text-dim); }
+  .help-table td:first-child { white-space: nowrap; color: var(--text); }
+  .help-table code { background: var(--input-bg); padding: 0 3px; border-radius: 2px; font-size: 10px; }
+  .help-example {
+    margin-top: 10px;
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+  }
+  .help-example pre {
+    font-family: 'Cascadia Code', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin: 4px 0 0;
+    line-height: 1.6;
+    white-space: pre-wrap;
+  }
+  .help-toggle {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 3px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    flex-shrink: 0;
+  }
+  .help-toggle:hover { color: var(--text); border-color: var(--text-dim); }
+  .help-toggle.active { color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
+
   .err { color: var(--red); font-size: 11px; }
   .cancel-btn {
     background: var(--hover-btn);

@@ -12,13 +12,34 @@ use std::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Read startup config before the DB or Tauri builder initialises.
+    let startup = read_startup_config();
+    let remember = startup.remember_position;
+    let single   = startup.single_instance;
+
     let conn = db::open().expect("Failed to open database");
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_dialog::init())
-        .setup(|_app| {
+        .plugin(tauri_plugin_dialog::init());
+
+    if single {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            // A second launch: focus the existing window instead.
+            if let Some(win) = app.get_webview_window("main") {
+                win.show().ok();
+                let _ = win.unminimize();
+                win.set_focus().ok();
+            }
+        }));
+    }
+
+    builder
+        .setup(move |app| {
             webapi::autostart_if_enabled();
+            if remember {
+                apply_window_state(app.handle().clone());
+            }
             Ok(())
         })
         .manage(DbState(Mutex::new(conn)))
@@ -84,6 +105,9 @@ pub fn run() {
             // windows
             show_reminder_window,
             hide_reminder_window,
+            save_window_state,
+            get_startup_config,
+            save_startup_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

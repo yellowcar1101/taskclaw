@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import '../app.css';
   import TaskTree from '$lib/components/TaskTree.svelte';
   import TaskDetail from '$lib/components/TaskDetail.svelte';
@@ -48,6 +48,15 @@
 
     await loadAll();
     ready = true;
+
+    // Save window position before the window closes (if the user has enabled it)
+    function onBeforeUnload() {
+      if (localStorage.getItem('startup_remember_position') === 'true') {
+        import('@tauri-apps/api/core').then(({ invoke }) => invoke('save_window_state').catch(() => {}));
+      }
+    }
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
   });
 
   async function addView() {
