@@ -56,15 +56,39 @@
   let syncStatus = '';
   let syncing = false;
   let connecting = false;
+  let hasCustomCreds = false;
+  let showOauthAdvanced = false;
+  let oauthClientId = '';
+  let oauthClientSecret = '';
+  let credsSaving = false;
+  let credsMsg = '';
 
   async function loadSyncStatus() {
     try {
       gdriveConnected = await api.gdriveStatus();
       gdriveLastSync = await api.gdriveLastSync();
+      hasCustomCreds = await api.gdriveHasCustomCredentials();
     } catch {}
   }
 
   onMount(loadSyncStatus);
+
+  async function saveCredentials() {
+    credsSaving = true;
+    credsMsg = '';
+    try {
+      await api.gdriveSetCredentials(oauthClientId.trim(), oauthClientSecret.trim());
+      hasCustomCreds = oauthClientId.trim().length > 0;
+      gdriveConnected = false;
+      oauthClientId = '';
+      oauthClientSecret = '';
+      credsMsg = hasCustomCreds ? 'Custom credentials saved. Please reconnect.' : 'Reverted to built-in credentials.';
+    } catch (e: any) {
+      credsMsg = 'Error: ' + (e?.message ?? String(e));
+    } finally {
+      credsSaving = false;
+    }
+  }
 
   async function connectGDrive() {
     connecting = true;
@@ -449,6 +473,49 @@
         {#if syncStatus}
           <div class="sync-msg" class:err={syncStatus.startsWith('Error')}>{syncStatus}</div>
         {/if}
+
+        <!-- Advanced: custom OAuth credentials -->
+        <div class="oauth-advanced">
+          <button class="oauth-toggle" on:click={() => showOauthAdvanced = !showOauthAdvanced}>
+            {showOauthAdvanced ? '▾' : '▸'} Advanced: Google OAuth credentials
+            {#if hasCustomCreds}<span class="creds-badge">custom</span>{/if}
+          </button>
+          {#if showOauthAdvanced}
+            <div class="oauth-panel">
+              <div class="section-hint" style="margin-bottom:8px">
+                By default TaskClaw uses its built-in OAuth app (requires approval). To use your own
+                Google Cloud credentials: create an OAuth 2.0 Client ID of type <em>Desktop app</em> in
+                <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer"
+                   class="ext-link">Google Cloud Console</a>, enable the Drive API, and paste the values below.
+                This lets <strong>anyone</strong> connect to their own Google Drive with no whitelist restrictions.
+              </div>
+              <div class="info-row">
+                <span class="info-label">Client ID</span>
+                <input class="name-input" style="flex:1" placeholder="…apps.googleusercontent.com"
+                  bind:value={oauthClientId} />
+              </div>
+              <div class="info-row">
+                <span class="info-label">Client Secret</span>
+                <input class="name-input" style="flex:1" type="password" placeholder="GOCSPX-…"
+                  bind:value={oauthClientSecret} />
+              </div>
+              <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+                <button class="sync-btn push" on:click={saveCredentials} disabled={credsSaving}>
+                  {credsSaving ? '…' : 'Save credentials'}
+                </button>
+                {#if hasCustomCreds}
+                  <button class="sync-btn danger" on:click={() => { oauthClientId = ''; oauthClientSecret = ''; saveCredentials(); }}
+                    disabled={credsSaving}>
+                    Revert to built-in
+                  </button>
+                {/if}
+              </div>
+              {#if credsMsg}
+                <div class="sync-msg" class:err={credsMsg.startsWith('Error')} style="margin-top:8px">{credsMsg}</div>
+              {/if}
+            </div>
+          {/if}
+        </div>
       {/if}
 
       <!-- API TAB -->
@@ -736,4 +803,37 @@
     background: #6ABF6922;
   }
   .sync-msg.err { color: var(--red); background: #E05C5C22; }
+
+  .oauth-advanced {
+    margin-top: 16px;
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+  }
+  .oauth-toggle {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 11px;
+    padding: 2px 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .oauth-toggle:hover { color: var(--text); }
+  .oauth-panel {
+    margin-top: 10px;
+    padding: 10px;
+    background: var(--hover);
+    border-radius: 5px;
+    border: 1px solid var(--border);
+  }
+  .creds-badge {
+    font-size: 10px;
+    background: var(--accent-dim);
+    color: var(--accent);
+    border-radius: 3px;
+    padding: 1px 5px;
+  }
+  .ext-link { color: var(--accent); }
 </style>

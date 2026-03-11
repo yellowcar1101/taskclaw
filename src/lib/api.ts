@@ -77,6 +77,12 @@ export const api = {
   gdriveLastSync: (): Promise<string | null> =>
     invoke('gdrive_last_sync'),
 
+  gdriveSetCredentials: (clientId: string, clientSecret: string): Promise<void> =>
+    invoke('gdrive_set_credentials', { clientId, clientSecret }),
+
+  gdriveHasCustomCredentials: (): Promise<boolean> =>
+    invoke('gdrive_has_custom_credentials'),
+
   // ── Flags ──────────────────────────────────────────────────────────────
   getFlags: (): Promise<Flag[]> =>
     invoke('get_flags'),

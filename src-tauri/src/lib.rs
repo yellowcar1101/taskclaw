@@ -67,6 +67,8 @@ pub fn run() {
             gdrive_sync_push,
             gdrive_sync_pull,
             gdrive_last_sync,
+            gdrive_set_credentials,
+            gdrive_has_custom_credentials,
             // web api
             webapi_start,
             webapi_set_token,

@@ -21,11 +21,66 @@ use tauri::State;
 
 use crate::commands::tasks::DbState;
 
-const CLIENT_ID: &str = env!("GDRIVE_CLIENT_ID");
-const CLIENT_SECRET: &str = env!("GDRIVE_CLIENT_SECRET");
+const BUILTIN_CLIENT_ID: &str = env!("GDRIVE_CLIENT_ID");
+const BUILTIN_CLIENT_SECRET: &str = env!("GDRIVE_CLIENT_SECRET");
 const TOKEN_URI: &str = "https://oauth2.googleapis.com/token";
 const DRIVE_SCOPES: &str = "https://www.googleapis.com/auth/drive.file";
 const SYNC_FILE_NAME: &str = "taskclaw-sync.json";
+
+// ── Credentials helper ────────────────────────────────────────────────────────
+
+fn get_credentials(conn: &rusqlite::Connection) -> (String, String) {
+    let client_id = conn.query_row(
+        "SELECT value FROM app_settings WHERE key='gdrive_client_id'",
+        [], |r| r.get::<_, String>(0)
+    ).unwrap_or_else(|_| BUILTIN_CLIENT_ID.to_string());
+
+    let client_secret = conn.query_row(
+        "SELECT value FROM app_settings WHERE key='gdrive_client_secret'",
+        [], |r| r.get::<_, String>(0)
+    ).unwrap_or_else(|_| BUILTIN_CLIENT_SECRET.to_string());
+
+    (client_id, client_secret)
+}
+
+// ── Set / get custom credentials ──────────────────────────────────────────────
+
+#[tauri::command]
+pub fn gdrive_set_credentials(state: State<DbState>, client_id: String, client_secret: String) -> Result<(), String> {
+    let conn = state.0.lock().unwrap();
+    if client_id.trim().is_empty() {
+        conn.execute("DELETE FROM app_settings WHERE key='gdrive_client_id'", [])
+            .map_err(|e| e.to_string())?;
+    } else {
+        conn.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('gdrive_client_id', ?1)",
+            params![client_id.trim()],
+        ).map_err(|e| e.to_string())?;
+    }
+    if client_secret.trim().is_empty() {
+        conn.execute("DELETE FROM app_settings WHERE key='gdrive_client_secret'", [])
+            .map_err(|e| e.to_string())?;
+    } else {
+        conn.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('gdrive_client_secret', ?1)",
+            params![client_secret.trim()],
+        ).map_err(|e| e.to_string())?;
+    }
+    // Clear tokens so the user must re-authorize with new credentials
+    conn.execute(
+        "DELETE FROM app_settings WHERE key IN ('gdrive_access_token','gdrive_refresh_token','gdrive_file_id')",
+        [],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn gdrive_has_custom_credentials(state: State<DbState>) -> bool {
+    let conn = state.0.lock().unwrap();
+    conn.query_row(
+        "SELECT 1 FROM app_settings WHERE key='gdrive_client_id'", [], |_| Ok(1_i32)
+    ).is_ok()
+}
 
 // ── Auth URL ──────────────────────────────────────────────────────────────────
 
@@ -36,7 +91,12 @@ pub struct AuthInfo {
 }
 
 #[tauri::command]
-pub fn gdrive_auth_url() -> Result<AuthInfo, String> {
+pub fn gdrive_auth_url(state: State<'_, DbState>) -> Result<AuthInfo, String> {
+    let (client_id, _) = {
+        let conn = state.0.lock().unwrap();
+        get_credentials(&conn)
+    };
+
     // Pick an available port
     let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
     let port = listener.local_addr().unwrap().port();
@@ -46,7 +106,7 @@ pub fn gdrive_auth_url() -> Result<AuthInfo, String> {
     let url = format!(
         "https://accounts.google.com/o/oauth2/v2/auth?\
          client_id={}&redirect_uri={}&response_type=code&scope={}&access_type=offline&prompt=consent",
-        urlencoding::encode(CLIENT_ID),
+        urlencoding::encode(&client_id),
         urlencoding::encode(&redirect),
         urlencoding::encode(DRIVE_SCOPES)
     );
@@ -58,6 +118,10 @@ pub fn gdrive_auth_url() -> Result<AuthInfo, String> {
 #[tauri::command]
 pub fn gdrive_wait_auth(state: State<'_, DbState>, port: u16) -> Result<String, String> {
     let redirect = format!("http://localhost:{}", port);
+    let (client_id, client_secret) = {
+        let conn = state.0.lock().unwrap();
+        get_credentials(&conn)
+    };
 
     // Start local server with 3-minute timeout
     let listener =
@@ -97,8 +161,8 @@ pub fn gdrive_wait_auth(state: State<'_, DbState>, port: u16) -> Result<String, 
     let body = format!(
         "code={}&client_id={}&client_secret={}&redirect_uri={}&grant_type=authorization_code",
         urlencoding::encode(&code),
-        urlencoding::encode(CLIENT_ID),
-        urlencoding::encode(CLIENT_SECRET),
+        urlencoding::encode(&client_id),
+        urlencoding::encode(&client_secret),
         urlencoding::encode(&redirect)
     );
 
@@ -133,11 +197,11 @@ pub fn gdrive_wait_auth(state: State<'_, DbState>, port: u16) -> Result<String, 
 
 // ── Token refresh helper ──────────────────────────────────────────────────────
 
-fn refresh_access_token(refresh_token: &str) -> Result<String, String> {
+fn refresh_access_token(refresh_token: &str, client_id: &str, client_secret: &str) -> Result<String, String> {
     let body = format!(
         "client_id={}&client_secret={}&refresh_token={}&grant_type=refresh_token",
-        urlencoding::encode(CLIENT_ID),
-        urlencoding::encode(CLIENT_SECRET),
+        urlencoding::encode(client_id),
+        urlencoding::encode(client_secret),
         urlencoding::encode(refresh_token)
     );
     let resp = reqwest::blocking::Client::new()
@@ -169,8 +233,8 @@ fn get_tokens(conn: &rusqlite::Connection) -> Result<(String, String), String> {
 fn get_valid_token(conn: &rusqlite::Connection) -> Result<String, String> {
     let (access, refresh) = get_tokens(conn)?;
     if refresh.is_empty() { return Ok(access); }
-    // Try refreshing to get a fresh token
-    refresh_access_token(&refresh)
+    let (client_id, client_secret) = get_credentials(conn);
+    refresh_access_token(&refresh, &client_id, &client_secret)
 }
 
 // ── Check connection status ───────────────────────────────────────────────────
