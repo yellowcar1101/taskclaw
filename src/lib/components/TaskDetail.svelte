@@ -98,7 +98,8 @@
   }
 
   // ── Timing section ──────────────────────────────────────────────────────────
-  let useTime = false;
+  let useStartTime = false;
+  let useDueTime = false;
   let startDateVal = '';
   let startTimeVal = '';
   let dueDateVal = '';
@@ -111,14 +112,20 @@
     const sd = task.start_date ?? '';
     const dd = task.due_date ?? '';
     const ra = task.reminder_at ?? '';
-    useTime = sd.includes('T') || dd.includes('T');
-    startDateVal = sd.split('T')[0];
-    startTimeVal = sd.includes('T') ? sd.split('T')[1].slice(0,5) : '';
-    dueDateVal = dd.split('T')[0];
-    dueTimeVal = dd.includes('T') ? dd.split('T')[1].slice(0,5) : '';
-    reminderOn = !!ra;
+    useStartTime = sd.includes('T');
+    useDueTime   = dd.includes('T');
+    startDateVal  = sd.split('T')[0];
+    startTimeVal  = sd.includes('T') ? sd.split('T')[1].slice(0,5) : '';
+    dueDateVal    = dd.split('T')[0];
+    dueTimeVal    = dd.includes('T') ? dd.split('T')[1].slice(0,5) : '';
+    reminderOn    = !!ra;
     reminderDateVal = ra.split('T')[0];
     reminderTimeVal = ra.includes('T') ? ra.split('T')[1].slice(0,5) : '';
+  }
+
+  function nowTime(): string {
+    const d = new Date();
+    return d.toTimeString().slice(0, 5);
   }
 
   function buildDateStr(date: string, time: string, withTime: boolean): string {
@@ -129,12 +136,12 @@
 
   async function saveStartDate() {
     if (!task) return;
-    const val = buildDateStr(startDateVal, startTimeVal, useTime);
+    const val = buildDateStr(startDateVal, startTimeVal, useStartTime);
     await updateTask(task.id, { start_date: val });
   }
   async function saveDueDate() {
     if (!task) return;
-    const val = buildDateStr(dueDateVal, dueTimeVal, useTime);
+    const val = buildDateStr(dueDateVal, dueTimeVal, useDueTime);
     await updateTask(task.id, { due_date: val });
   }
   async function saveReminder() {
@@ -320,25 +327,25 @@
             <button class="quick-btn" on:click={() => quickStart(7)}>Next week</button>
           </div>
 
-          <label class="chk-row" style="margin-bottom:6px">
-            <input type="checkbox" bind:checked={useTime}
-              on:change={async () => { await saveStartDate(); await saveDueDate(); }} />
-            Use time
-          </label>
-
           <div class="date-row">
             <span class="field-label" style="width:48px">Start</span>
             <input type="date" class="date-input" bind:value={startDateVal} on:change={saveStartDate} />
-            {#if useTime}
+            {#if useStartTime}
               <input type="time" class="time-input" bind:value={startTimeVal} on:change={saveStartDate} />
+              <button class="time-clear" on:click={() => { useStartTime = false; startTimeVal = ''; saveStartDate(); }} title="Remove time">✕</button>
+            {:else if startDateVal}
+              <button class="time-add" on:click={() => { useStartTime = true; startTimeVal = nowTime(); saveStartDate(); }} title="Add time">⊕ time</button>
             {/if}
           </div>
 
           <div class="date-row">
             <span class="field-label" style="width:48px">Due</span>
             <input type="date" class="date-input" bind:value={dueDateVal} on:change={saveDueDate} />
-            {#if useTime}
+            {#if useDueTime}
               <input type="time" class="time-input" bind:value={dueTimeVal} on:change={saveDueDate} />
+              <button class="time-clear" on:click={() => { useDueTime = false; dueTimeVal = ''; saveDueDate(); }} title="Remove time">✕</button>
+            {:else if dueDateVal}
+              <button class="time-add" on:click={() => { useDueTime = true; dueTimeVal = nowTime(); saveDueDate(); }} title="Add time">⊕ time</button>
             {/if}
           </div>
 
@@ -629,6 +636,27 @@
   .date-input:focus, .time-input:focus { border-color: var(--accent); }
   .date-input { width: 130px; }
   .time-input { width: 75px; }
+  .time-add {
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-size: 11px;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 3px;
+    opacity: 0.7;
+  }
+  .time-add:hover { opacity: 1; background: var(--hover); }
+  .time-clear {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 11px;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 3px;
+  }
+  .time-clear:hover { color: var(--red); }
 
   .recurrence-btn {
     margin-top: 8px;

@@ -19,9 +19,21 @@
   function applyAppearance() {
     const root = document.documentElement;
     const fontMap: Record<string, string> = {
-      system: 'system-ui, sans-serif',
-      mono:   "'Cascadia Code', 'Fira Code', monospace",
-      inter:  'Inter, system-ui, sans-serif',
+      system:    'system-ui, -apple-system, sans-serif',
+      segoe:     "'Segoe UI', system-ui, sans-serif",
+      inter:     'Inter, system-ui, sans-serif',
+      verdana:   'Verdana, Geneva, sans-serif',
+      trebuchet: "'Trebuchet MS', Helvetica, sans-serif",
+      calibri:   'Calibri, Candara, sans-serif',
+      roboto:    'Roboto, system-ui, sans-serif',
+      opensans:  "'Open Sans', system-ui, sans-serif",
+      georgia:   'Georgia, serif',
+      garamond:  "'Garamond', 'EB Garamond', serif",
+      palatino:  "'Palatino Linotype', Palatino, serif",
+      times:     "'Times New Roman', Times, serif",
+      mono:      "'Cascadia Code', 'Fira Code', 'Consolas', monospace",
+      consolas:  "Consolas, 'Courier New', monospace",
+      courier:   "'Courier New', Courier, monospace",
     };
     root.style.setProperty('--app-font', fontMap[appFont] ?? fontMap.system);
     root.style.setProperty('--app-font-size', appFontSize + 'px');
@@ -344,9 +356,27 @@
         <div class="info-row">
           <span class="info-label">Font</span>
           <select class="info-select" bind:value={appFont}>
-            <option value="system">System UI (default)</option>
-            <option value="inter">Inter</option>
-            <option value="mono">Monospace (Cascadia Code)</option>
+            <optgroup label="Sans-serif (recommended)">
+              <option value="system">System UI (default)</option>
+              <option value="segoe">Segoe UI</option>
+              <option value="inter">Inter</option>
+              <option value="verdana">Verdana</option>
+              <option value="trebuchet">Trebuchet MS</option>
+              <option value="calibri">Calibri</option>
+              <option value="roboto">Roboto</option>
+              <option value="opensans">Open Sans</option>
+            </optgroup>
+            <optgroup label="Serif">
+              <option value="georgia">Georgia</option>
+              <option value="garamond">Garamond</option>
+              <option value="palatino">Palatino Linotype</option>
+              <option value="times">Times New Roman</option>
+            </optgroup>
+            <optgroup label="Monospace">
+              <option value="mono">Cascadia Code / Fira Code</option>
+              <option value="consolas">Consolas</option>
+              <option value="courier">Courier New</option>
+            </optgroup>
           </select>
         </div>
 
@@ -368,7 +398,7 @@
 
         <div class="info-row" style="margin-top:16px">
           <span class="info-label">Version</span>
-          <span class="info-value">TaskClaw 1.0</span>
+          <span class="info-value">TaskClaw 0.3.0</span>
         </div>
         <div class="info-row">
           <span class="info-label">Data</span>

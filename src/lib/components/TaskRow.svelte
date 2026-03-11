@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, tick } from 'svelte';
   import type { Task } from '../types';
   import {
     expanded, selected, editingId, contextMenu,
@@ -12,10 +12,10 @@
   export let task: Task;
   export let depth: number = 0;
   export let siblings: Task[] = [];
+  export let visibleCols: Set<string> = new Set(['due', 'start']);
 
   const dispatch = createEventDispatcher();
 
-  let hovered = false;
   let editValue = '';
   let inputEl: HTMLInputElement;
   let rowEl: HTMLDivElement;
@@ -24,6 +24,7 @@
   $: isExpanded = $expanded.has(task.id);
   $: isSelected = $selected.has(task.id);
   $: isEditing = $editingId === task.id;
+  $: if (isEditing) tick().then(() => inputEl?.focus());
   $: children = isExpanded ? getChildren(task.id) : [];
   $: myIndex = siblings.findIndex(s => s.id === task.id);
 
@@ -189,8 +190,6 @@
   on:click={onClick}
   on:dblclick={startEdit}
   on:contextmenu={onContextMenu}
-  on:mouseenter={() => hovered = true}
-  on:mouseleave={() => hovered = false}
   draggable={true}
   on:dragstart={onDragStart}
   on:dragend={onDragEnd}
@@ -250,32 +249,37 @@
   </div>
 
   <!-- Due date -->
-  <div class="col-due {dueClass(task.due_date)}">
-    {formatDue(task.due_date)}
-  </div>
+  {#if visibleCols.has('due')}
+    <div class="col-due {dueClass(task.due_date)}">{formatDue(task.due_date)}</div>
+  {/if}
 
   <!-- Start date -->
-  <div class="col-start">
-    {task.start_date ?? ''}
-  </div>
+  {#if visibleCols.has('start')}
+    <div class="col-start">{task.start_date ? task.start_date.split('T')[0] : ''}</div>
+  {/if}
 
-  <!-- Hover actions -->
-  {#if hovered || isSelected}
-    <div class="actions" on:click|stopPropagation role="none">
-      <button class="icon-btn" on:click={addSubtask} title="Add subtask">+</button>
-      <button class="icon-btn" on:click={onIndent} title="Indent" disabled={myIndex === 0}>⇥</button>
-      <button class="icon-btn" on:click={onOutdent} title="Outdent" disabled={!task.parent_id}>⇤</button>
-      <button class="icon-btn" on:click={onMoveUp} title="Move up" disabled={myIndex === 0}>↑</button>
-      <button class="icon-btn" on:click={onMoveDown} title="Move down" disabled={myIndex >= siblings.length - 1}>↓</button>
-      <button class="icon-btn danger" on:click={onDelete} title="Delete">✕</button>
+  <!-- Flag column -->
+  {#if visibleCols.has('flag') && task.flag}
+    <div class="col-flag">
+      <span class="flag-pill" style="background:{task.flag.color}22;color:{task.flag.color};">{task.flag.name}</span>
     </div>
   {/if}
+
+  <!-- Tags column -->
+  {#if visibleCols.has('tags') && task.tags.length}
+    <div class="col-tags">
+      {#each task.tags.slice(0, 2) as tag}
+        <span class="tag-pill" style="background:{tag.color}22;color:{tag.color};">{tag.name}</span>
+      {/each}
+    </div>
+  {/if}
+
 </div>
 
 <!-- Children (recursive) -->
 {#if isExpanded && children.length > 0}
   {#each children as child (child.id)}
-    <svelte:self task={child} depth={depth + 1} siblings={children} />
+    <svelte:self task={child} depth={depth + 1} siblings={children} {visibleCols} />
   {/each}
 {/if}
 
@@ -396,15 +400,27 @@
     flex-shrink: 0;
   }
 
-  .actions {
-    display: flex;
-    align-items: center;
-    gap: 1px;
-    position: absolute;
-    right: 4px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 1px 2px;
+  .col-flag {
+    width: 90px;
+    flex-shrink: 0;
+    overflow: hidden;
   }
+  .col-tags {
+    width: 100px;
+    flex-shrink: 0;
+    display: flex;
+    gap: 3px;
+    overflow: hidden;
+  }
+  .flag-pill, .tag-pill {
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+    max-width: 100%;
+  }
+
 </style>

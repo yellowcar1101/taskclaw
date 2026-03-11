@@ -1,15 +1,71 @@
 <script lang="ts">
+  import { writable } from 'svelte/store';
   import TaskRow from './TaskRow.svelte';
   import {
     rootTasks, sortField, sortDir, toggleSort,
     filterFlagId, flags, searchQuery,
     expandAll, collapseAll, clearSelection, createTask, editingId,
-    showRapidInput
+    showRapidInput, selected, allTasks, taskById, expanded,
+    moveTask, reorderTasks, deleteTask, childrenOf
   } from '../stores/tasks';
+  import type { Task } from '../types';
+
+  // ── Selected task context ─────────────────────────────────────────────────
+  $: selectedId = $selected.size === 1 ? [...$selected][0] : null;
+  $: selectedTask = selectedId ? ($taskById.get(selectedId) ?? null) : null;
+  $: siblings = selectedTask
+    ? ($childrenOf.get(selectedTask.parent_id ?? null) ?? [])
+    : [];
+  $: myIndex = selectedTask ? siblings.findIndex(s => s.id === selectedTask!.id) : -1;
+  $: hasSelected = !!selectedTask;
 
   async function addRootTask() {
     const t = await createTask({ parent_id: null, caption: 'New task' });
     editingId.set(t.id);
+  }
+
+  async function addSubtask() {
+    if (!selectedTask) return;
+    const t = await createTask({ parent_id: selectedTask.id, caption: 'New task' });
+    expanded.update(s => { const n = new Set(s); n.add(selectedTask!.id); return n; });
+    editingId.set(t.id);
+  }
+
+  async function onIndent() {
+    if (!selectedTask || myIndex <= 0) return;
+    const prev = siblings[myIndex - 1];
+    const prevChildren = $childrenOf.get(prev.id) ?? [];
+    const newPos = prevChildren.length > 0
+      ? prevChildren[prevChildren.length - 1].position + 1000
+      : 1000;
+    expanded.update(s => { const n = new Set(s); n.add(prev.id); return n; });
+    await moveTask(selectedTask.id, prev.id, newPos);
+  }
+
+  async function onOutdent() {
+    if (!selectedTask?.parent_id) return;
+    const parent = $taskById.get(selectedTask.parent_id);
+    await moveTask(selectedTask.id, parent?.parent_id ?? null, selectedTask.position + 0.5);
+  }
+
+  async function onMoveUp() {
+    if (!selectedTask || myIndex <= 0) return;
+    const prev = siblings[myIndex - 1];
+    await reorderTasks([[selectedTask.id, prev.position - 0.5]]);
+  }
+
+  async function onMoveDown() {
+    if (!selectedTask || myIndex >= siblings.length - 1) return;
+    const next = siblings[myIndex + 1];
+    await reorderTasks([[selectedTask.id, next.position + 0.5]]);
+  }
+
+  async function onDelete() {
+    if (!selectedTask) return;
+    const t = selectedTask;
+    if (confirm(`Delete "${t.caption}"${t.has_children ? ' and all subtasks' : ''}?`)) {
+      await deleteTask(t.id);
+    }
   }
 
   function onGlobalKeydown(e: KeyboardEvent) {
@@ -17,6 +73,33 @@
       e.preventDefault();
       showRapidInput.set(true);
     }
+    if (e.key === 'Delete' && hasSelected && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
+      onDelete();
+    }
+  }
+
+  // ── Column visibility ─────────────────────────────────────────────────────
+  const COL_KEY = 'visible_cols';
+  function loadCols(): Set<string> {
+    try { return new Set(JSON.parse(localStorage.getItem(COL_KEY) ?? '["due","start"]')); }
+    catch { return new Set(['due', 'start']); }
+  }
+  let visibleCols = writable<Set<string>>(loadCols());
+  visibleCols.subscribe(v => localStorage.setItem(COL_KEY, JSON.stringify([...v])));
+
+  let showColMenu = false;
+  const ALL_COLS = [
+    { id: 'due',   label: 'Due Date' },
+    { id: 'start', label: 'Start Date' },
+    { id: 'flag',  label: 'Flag' },
+    { id: 'tags',  label: 'Tags' },
+  ];
+  function toggleCol(id: string) {
+    visibleCols.update(s => {
+      const n = new Set(s);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
   }
 </script>
 
@@ -27,25 +110,44 @@
   <button class="tb-btn primary" on:click={addRootTask}>+ Task</button>
   <button class="tb-btn" on:click={() => showRapidInput.set(true)} title="Rapid Input (Ctrl+Shift+I)">📋 Rapid</button>
 
-  <input
-    class="search-input"
-    placeholder="Search…"
-    bind:value={$searchQuery}
-  />
+  <div class="tb-divider"></div>
 
-  <select class="flag-filter" bind:value={$filterFlagId}>
-    <option value={null}>All flags</option>
-    {#each $flags as flag}
-      <option value={flag.id}>{flag.name}</option>
-    {/each}
-  </select>
+  <!-- Contextual task actions -->
+  <button class="tb-btn" on:click={addSubtask} disabled={!hasSelected} title="Add subtask to selected">+ Sub</button>
+  <button class="tb-btn icon" on:click={onIndent}   disabled={!hasSelected || myIndex <= 0}             title="Indent (→)">⇥</button>
+  <button class="tb-btn icon" on:click={onOutdent}  disabled={!hasSelected || !selectedTask?.parent_id} title="Outdent (←)">⇤</button>
+  <button class="tb-btn icon" on:click={onMoveUp}   disabled={!hasSelected || myIndex <= 0}             title="Move up">↑</button>
+  <button class="tb-btn icon" on:click={onMoveDown} disabled={!hasSelected || myIndex >= siblings.length - 1} title="Move down">↓</button>
+  <button class="tb-btn icon danger" on:click={onDelete} disabled={!hasSelected} title="Delete selected (Del)">✕</button>
 
   <div class="spacer"></div>
 
-  <button class="tb-btn" on:click={expandAll} title="Expand all">⊞</button>
-  <button class="tb-btn" on:click={collapseAll} title="Collapse all">⊟</button>
-  <button class="tb-btn" on:click={clearSelection} title="Clear selection">✕</button>
+  <!-- Column visibility -->
+  <div style="position:relative">
+    <button class="tb-btn" on:click={() => showColMenu = !showColMenu} title="Show/hide columns">
+      Columns ▾
+    </button>
+    {#if showColMenu}
+      <div class="col-menu" role="menu">
+        {#each ALL_COLS as col}
+          <label class="col-menu-item">
+            <input type="checkbox" checked={$visibleCols.has(col.id)}
+              on:change={() => toggleCol(col.id)} />
+            {col.label}
+          </label>
+        {/each}
+      </div>
+    {/if}
+  </div>
+
+  <button class="tb-btn icon" on:click={expandAll}    title="Expand all">⊞</button>
+  <button class="tb-btn icon" on:click={collapseAll}  title="Collapse all">⊟</button>
+  <button class="tb-btn icon" on:click={clearSelection} title="Clear selection">○</button>
 </div>
+
+{#if showColMenu}
+  <div class="col-menu-backdrop" on:click={() => showColMenu = false} role="none"></div>
+{/if}
 
 <!-- Column headers -->
 <div class="col-headers">
@@ -54,20 +156,30 @@
     Task
     {#if $sortField === 'caption'}<span class="sort-arrow">{$sortDir === 'asc' ? '↑' : '↓'}</span>{/if}
   </button>
-  <button class="col-header due-col" on:click={() => toggleSort('due_date')}>
-    Due
-    {#if $sortField === 'due_date'}<span class="sort-arrow">{$sortDir === 'asc' ? '↑' : '↓'}</span>{/if}
-  </button>
-  <button class="col-header start-col" on:click={() => toggleSort('start_date')}>
-    Start
-    {#if $sortField === 'start_date'}<span class="sort-arrow">{$sortDir === 'asc' ? '↑' : '↓'}</span>{/if}
-  </button>
+  {#if $visibleCols.has('due')}
+    <button class="col-header due-col" on:click={() => toggleSort('due_date')}>
+      Due
+      {#if $sortField === 'due_date'}<span class="sort-arrow">{$sortDir === 'asc' ? '↑' : '↓'}</span>{/if}
+    </button>
+  {/if}
+  {#if $visibleCols.has('start')}
+    <button class="col-header start-col" on:click={() => toggleSort('start_date')}>
+      Start
+      {#if $sortField === 'start_date'}<span class="sort-arrow">{$sortDir === 'asc' ? '↑' : '↓'}</span>{/if}
+    </button>
+  {/if}
+  {#if $visibleCols.has('flag')}
+    <div class="col-header flag-col">Flag</div>
+  {/if}
+  {#if $visibleCols.has('tags')}
+    <div class="col-header tags-col">Tags</div>
+  {/if}
 </div>
 
 <!-- Task list -->
 <div class="task-list" role="treegrid">
   {#each $rootTasks as task (task.id)}
-    <TaskRow task={task} depth={0} siblings={$rootTasks} />
+    <TaskRow task={task} depth={0} siblings={$rootTasks} visibleCols={$visibleCols} />
   {/each}
 
   {#if $rootTasks.length === 0}
@@ -79,54 +191,62 @@
   .tree-toolbar {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 8px;
+    gap: 4px;
+    padding: 4px 8px;
     background: var(--surface-elevated);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
+    flex-wrap: wrap;
   }
 
   .tb-btn {
     background: var(--hover-btn);
     border: 1px solid var(--border);
     color: var(--text);
-    padding: 3px 10px;
+    padding: 3px 8px;
     border-radius: 4px;
     cursor: pointer;
     font-size: 12px;
     transition: background 0.1s;
+    white-space: nowrap;
   }
-  .tb-btn:hover { background: var(--hover); }
-  .tb-btn.primary {
-    background: var(--accent);
-    color: #fff;
-    border-color: var(--accent);
-  }
-  .tb-btn.primary:hover { background: var(--accent); }
+  .tb-btn.icon { padding: 3px 6px; min-width: 24px; }
+  .tb-btn:hover:not(:disabled) { background: var(--hover); }
+  .tb-btn:disabled { opacity: 0.3; cursor: default; }
+  .tb-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .tb-btn.primary:hover:not(:disabled) { opacity: 0.9; }
+  .tb-btn.danger:hover:not(:disabled) { color: var(--red); border-color: var(--red); }
 
-  .search-input {
-    background: var(--input-bg);
-    border: 1px solid var(--border);
-    color: var(--text);
-    padding: 3px 8px;
-    border-radius: 4px;
-    font-size: 12px;
-    width: 160px;
-    outline: none;
-  }
-  .search-input:focus { border-color: var(--accent); }
-
-  .flag-filter {
-    background: var(--input-bg);
-    border: 1px solid var(--border);
-    color: var(--text);
-    padding: 3px 6px;
-    border-radius: 4px;
-    font-size: 12px;
-    outline: none;
-  }
-
+  .tb-divider { width: 1px; height: 18px; background: var(--border); margin: 0 2px; flex-shrink: 0; }
   .spacer { flex: 1; }
+
+  .col-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    background: var(--surface-elevated);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    z-index: 500;
+    padding: 6px 0;
+    min-width: 140px;
+  }
+  .col-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px;
+    font-size: 12px;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .col-menu-item:hover { background: var(--hover); }
+  .col-menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 499;
+  }
 
   .col-headers {
     display: flex;
@@ -159,6 +279,8 @@
   .col-header.caption-col { flex: 1; }
   .col-header.due-col     { width: 80px; flex-shrink: 0; }
   .col-header.start-col   { width: 70px; flex-shrink: 0; }
+  .col-header.flag-col    { width: 90px; flex-shrink: 0; }
+  .col-header.tags-col    { width: 100px; flex-shrink: 0; }
   .sort-arrow { color: var(--accent); font-size: 10px; }
 
   .task-list {

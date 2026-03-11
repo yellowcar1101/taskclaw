@@ -21,9 +21,21 @@
     // Apply stored appearance before data loads
     const root = document.documentElement;
     const fontMap: Record<string, string> = {
-      system: 'system-ui, sans-serif',
-      mono:   "'Cascadia Code', 'Fira Code', monospace",
-      inter:  'Inter, system-ui, sans-serif',
+      system:    'system-ui, -apple-system, sans-serif',
+      segoe:     "'Segoe UI', system-ui, sans-serif",
+      inter:     'Inter, system-ui, sans-serif',
+      verdana:   'Verdana, Geneva, sans-serif',
+      trebuchet: "'Trebuchet MS', Helvetica, sans-serif",
+      calibri:   'Calibri, Candara, sans-serif',
+      roboto:    'Roboto, system-ui, sans-serif',
+      opensans:  "'Open Sans', system-ui, sans-serif",
+      georgia:   'Georgia, serif',
+      garamond:  "'Garamond', 'EB Garamond', serif",
+      palatino:  "'Palatino Linotype', Palatino, serif",
+      times:     "'Times New Roman', Times, serif",
+      mono:      "'Cascadia Code', 'Fira Code', 'Consolas', monospace",
+      consolas:  "Consolas, 'Courier New', monospace",
+      courier:   "'Courier New', Courier, monospace",
     };
     const savedFont = localStorage.getItem('app_font') ?? 'system';
     const savedSize = localStorage.getItem('app_font_size') ?? '12';
