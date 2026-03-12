@@ -57,14 +57,14 @@
     if (!task) return;
     const parentId = task.parent_id;
     close();
-    const t = await createTask({ parent_id: parentId, caption: 'New task' });
+    const t = await createTask({ parent_id: parentId, caption: '' });
     editingId.set(t.id);
   }
   async function newSubtask() {
     if (!task) return;
     const taskId = task.id;
     close();
-    const t = await createTask({ parent_id: taskId, caption: 'New task' });
+    const t = await createTask({ parent_id: taskId, caption: '' });
     // Expand the parent so the new subtask is visible
     expanded.update(s => { const n = new Set(s); n.add(taskId); return n; });
     editingId.set(t.id);

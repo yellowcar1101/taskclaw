@@ -318,22 +318,34 @@
       {#if activeTab === 'general'}
         <div class="section-hint">These settings take effect on next launch.</div>
 
-        <div class="info-row">
-          <span class="info-label">Remember window position</span>
-          <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer">
+        <div class="general-grid">
+          <label class="general-option">
             <input type="checkbox" bind:checked={rememberPosition} style="accent-color:var(--accent)"
               on:change={saveGeneralSettings} />
-            Save and restore size & position on startup
+            <span>
+              <strong>Remember window position</strong><br>
+              Save and restore size &amp; position on startup
+            </span>
           </label>
-        </div>
 
-        <div class="info-row">
-          <span class="info-label">Single instance</span>
-          <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer">
+          <label class="general-option">
             <input type="checkbox" bind:checked={singleInstance} style="accent-color:var(--accent)"
               on:change={saveGeneralSettings} />
-            Prevent more than one copy running at a time
+            <span>
+              <strong>Single instance</strong><br>
+              Prevent more than one copy running at a time
+            </span>
           </label>
+
+          <div class="general-option info-only">
+            <span class="info-label">Version</span>
+            <span class="info-value">TaskClaw 0.3.0</span>
+          </div>
+
+          <div class="general-option info-only">
+            <span class="info-label">Data</span>
+            <span class="info-value dim">./Data/ (portable)</span>
+          </div>
         </div>
 
         <div class="section-hint" style="margin-top:6px">
@@ -344,15 +356,6 @@
         {#if generalMsg}
           <div class="sync-msg" class:err={generalMsg.startsWith('Error')} style="margin-top:8px">{generalMsg}</div>
         {/if}
-
-        <div class="info-row" style="margin-top:16px">
-          <span class="info-label">Version</span>
-          <span class="info-value">TaskClaw 0.3.0</span>
-        </div>
-        <div class="info-row">
-          <span class="info-label">Data</span>
-          <span class="info-value dim">./Data/ (portable)</span>
-        </div>
       {/if}
 
       <!-- FLAGS TAB -->
@@ -914,6 +917,46 @@
     color: var(--text-dim);
     margin-bottom: 10px;
     line-height: 1.5;
+  }
+
+  .general-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 24px;
+    margin-bottom: 8px;
+  }
+
+  .general-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text);
+    cursor: pointer;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--surface-elevated);
+  }
+  .general-option input[type=checkbox] {
+    accent-color: var(--accent);
+    margin-top: 2px;
+    flex-shrink: 0;
+  }
+  .general-option span strong {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 2px;
+    color: var(--text);
+  }
+  .general-option span {
+    color: var(--text-dim);
+    line-height: 1.4;
+  }
+  .general-option.info-only {
+    cursor: default;
+    flex-direction: column;
+    gap: 2px;
   }
 
   .item-row {

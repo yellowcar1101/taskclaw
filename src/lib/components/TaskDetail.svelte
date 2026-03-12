@@ -27,6 +27,31 @@
   let noteValue = '';
   let noteEl: HTMLTextAreaElement;
 
+  // ── Notes resize ─────────────────────────────────────────────────────────
+  let notesHeight = parseInt(localStorage.getItem('notes_height') ?? '120');
+  let resizing = false;
+  let resizeStartY = 0;
+  let resizeStartH = 0;
+
+  function onResizeStart(e: MouseEvent) {
+    resizing = true;
+    resizeStartY = e.clientY;
+    resizeStartH = notesHeight;
+    window.addEventListener('mousemove', onResizeMove);
+    window.addEventListener('mouseup', onResizeEnd);
+    e.preventDefault();
+  }
+  function onResizeMove(e: MouseEvent) {
+    if (!resizing) return;
+    notesHeight = Math.max(60, resizeStartH + (e.clientY - resizeStartY));
+    localStorage.setItem('notes_height', String(notesHeight));
+  }
+  function onResizeEnd() {
+    resizing = false;
+    window.removeEventListener('mousemove', onResizeMove);
+    window.removeEventListener('mouseup', onResizeEnd);
+  }
+
   $: if (task) noteValue = task.note ?? '';
 
   async function saveNote() {
@@ -308,10 +333,10 @@
               bind:this={noteEl}
               bind:value={noteValue}
               on:blur={saveNote}
-              rows="8"
               placeholder="Add notes…"
-
+              style="height:{notesHeight}px; resize:none;"
             ></textarea>
+            <div class="notes-resize-handle" on:mousedown={onResizeStart} role="separator"></div>
           {:else}
             <div
               class="note-preview"
@@ -364,7 +389,7 @@
           <!-- Flag picker -->
           <div class="field-row" style="margin-top:8px">
             <span class="field-label">Flag</span>
-            <select class="field-select"
+            <select class="field-select flag-select"
               value={task.flag_id ?? ''}
               on:change={e => updateTask(task!.id, { flag_id: (e.target as HTMLSelectElement).value })}
             >
@@ -378,7 +403,7 @@
           <!-- Tags -->
           <div class="field-row" style="margin-top:8px;align-items:flex-start;flex-direction:column;gap:4px">
             <span class="field-label">Tags</span>
-            <div class="tag-chips">
+            <div class="tag-chips tag-chips-compact">
               {#each task.tags as tag}
                 <span class="tag-chip" style="background:{tag.color}22;color:{tag.color};border-color:{tag.color}44">
                   {tag.name}
@@ -654,9 +679,31 @@
     font-size: 12px;
     padding: 6px;
     border-radius: 3px;
-    resize: vertical;
+    resize: none;
     outline: none;
     line-height: 1.5;
+    box-sizing: border-box;
+  }
+
+  .notes-resize-handle {
+    height: 6px;
+    background: transparent;
+    cursor: ns-resize;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    border-top: 2px solid var(--border);
+  }
+  .notes-resize-handle::after {
+    content: '';
+    width: 32px;
+    height: 3px;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .notes-resize-handle:hover {
+    border-top-color: var(--accent);
   }
 
   /* General */
@@ -687,6 +734,14 @@
     padding: 2px 4px;
     font-size: 12px;
     outline: none;
+  }
+  .flag-select {
+    flex: 0 1 auto;
+    max-width: 180px;
+    width: fit-content;
+  }
+  .tag-chips-compact {
+    max-width: 100%;
   }
 
   .tag-chips { display: flex; flex-wrap: wrap; gap: 4px; }

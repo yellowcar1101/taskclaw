@@ -27,19 +27,19 @@
     if (selectedTask) {
       const t = await createTask({
         parent_id: selectedTask.parent_id ?? undefined,
-        caption: 'New task',
+        caption: '',
         position: selectedTask.position + 0.5,
       });
       editingId.set(t.id);
     } else {
-      const t = await createTask({ parent_id: null, caption: 'New task' });
+      const t = await createTask({ parent_id: null, caption: '' });
       editingId.set(t.id);
     }
   }
 
   async function addSubtask() {
     if (!selectedTask) return;
-    const t = await createTask({ parent_id: selectedTask.id, caption: 'New task' });
+    const t = await createTask({ parent_id: selectedTask.id, caption: '' });
     expanded.update(s => { const n = new Set(s); n.add(selectedTask!.id); return n; });
     editingId.set(t.id);
   }

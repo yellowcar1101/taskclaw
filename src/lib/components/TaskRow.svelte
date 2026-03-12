@@ -104,7 +104,7 @@
   }
 
   async function addSubtask() {
-    const t = await createTask({ parent_id: task.id, caption: 'New task' });
+    const t = await createTask({ parent_id: task.id, caption: '' });
     expanded.update(s => { const n = new Set(s); n.add(task.id); return n; });
     editingId.set(t.id);
   }
