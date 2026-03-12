@@ -30,6 +30,15 @@ jobs:
       - name: Install deps
         run: npm ci
 
+      - name: TypeScript tests
+        run: npm run test
+
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib
+        env:
+          GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
+          GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
+
       - name: Build
         run: npm run tauri build -- --bundles nsis
         env:
