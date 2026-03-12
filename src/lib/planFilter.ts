@@ -11,6 +11,7 @@ export interface FilterOptions {
   showCompleted: boolean;
   searchQuery: string;
   flagId: string | null;
+  starred?: boolean;
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -73,6 +74,7 @@ export function filterTasksForView(allTasks: Task[], opts: FilterOptions): Task[
   function passesBaseFilters(t: Task): boolean {
     if (!opts.showCompleted && t.completed_at) return false;
     if (opts.actionFilter !== 'all' && t.completed_at) return false;
+    if (opts.starred && !t.starred) return false;
     if (opts.flagId) {
       if (opts.flagId === '__starred__' && !t.starred) return false;
       if (opts.flagId === '__today__' && t.due_date !== today) return false;

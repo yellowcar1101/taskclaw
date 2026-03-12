@@ -294,7 +294,9 @@
       {:else if $activeTabId === '__starred__' || $activeTabId === '__today__'}
         {#each [{ id: $activeTabId, name: $activeTabId === '__starred__' ? 'Starred' : 'Due Today',
                   show_completed: false, group_by: 'none', sort_by: 'due_date', sort_dir: 'asc',
-                  visible_fields: [], filter_json: '{"action_filter":"all"}', position: 0 }] as v}
+                  visible_fields: [],
+                  filter_json: $activeTabId === '__starred__' ? '{"action_filter":"all","starred":true}' : '{"action_filter":"all"}',
+                  position: 0 }] as v}
           <PlanView view={v} />
         {/each}
       {:else}

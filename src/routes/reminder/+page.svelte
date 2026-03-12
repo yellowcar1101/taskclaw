@@ -11,6 +11,7 @@
     flagName: string | null;
     startDate: string | null;
     dueDate: string | null;
+    reminderAt: string | null;
     starred: boolean;
   }
 
@@ -22,6 +23,20 @@
     if (!s) return '—';
     const d = new Date(s + 'T00:00');
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  function fmtReminder(s: string | null): string {
+    if (!s) return '—';
+    const d = new Date(s);
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const mon = months[d.getMonth()];
+    const day = d.getDate();
+    if (s.includes('T')) {
+      const h = String(d.getHours()).padStart(2, '0');
+      const m = String(d.getMinutes()).padStart(2, '0');
+      return `${mon} ${day} ${h}:${m}`;
+    }
+    return `${mon} ${day}`;
   }
 
   onMount(async () => {
@@ -105,6 +120,9 @@
 
           <!-- Task caption -->
           <span class="r-caption">{r.caption}</span>
+
+          <!-- Reminder time -->
+          <span class="r-date r-reminder">{fmtReminder(r.reminderAt)}</span>
 
           <!-- Start date -->
           <span class="r-date">{fmtDate(r.startDate)}</span>
@@ -272,6 +290,11 @@
     width: 46px;
     text-align: right;
     font-family: system-ui, sans-serif;
+  }
+  .r-reminder {
+    width: 72px;
+    color: #f5a623;
+    color: var(--amber, #f5a623);
   }
 
   /* Snooze buttons group */

@@ -18,12 +18,14 @@
     try { return JSON.parse(view.filter_json || '{}'); } catch { return {}; }
   })();
   $: actionFilter = (filterObj.action_filter ?? 'all') as ActionFilter;
+  $: filterStarred = !!(filterObj.starred);
 
   $: filtered = filterTasksForView($allTasks, {
     actionFilter,
     showCompleted: view.show_completed,
     searchQuery: $searchQuery,
     flagId: $filterFlagId,
+    starred: filterStarred,
   });
 
   $: sorted = sortTasks(filtered, (view.sort_by || 'position') as any, (view.sort_dir || 'asc') as any);

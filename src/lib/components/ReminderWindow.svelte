@@ -12,6 +12,7 @@
     flagName: string | null;
     startDate: string | null;
     dueDate: string | null;
+    reminderAt: string | null;
     starred: boolean;
   }
 
@@ -54,6 +55,7 @@
         flagName: task.flag?.name ?? null,
         startDate: task.start_date,
         dueDate: task.due_date,
+        reminderAt: task.reminder_at,
         starred: task.starred,
       });
     }

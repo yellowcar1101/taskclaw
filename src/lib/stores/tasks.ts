@@ -29,6 +29,10 @@ export const filterFlagId      = writable<string | null>(null);
 // ── UI state (range select) ────────────────────────────────────────────────────
 export const rangeAnchorId = writable<string | null>(null);
 
+// Aliases for multi-select (selectedIds = selected, lastClickedId = rangeAnchorId)
+export const selectedIds   = selected;
+export const lastClickedId = rangeAnchorId;
+
 // ── Derived ───────────────────────────────────────────────────────────────────
 export const taskById = derived(allTasks, ts => new Map(ts.map(t => [t.id, t])));
 

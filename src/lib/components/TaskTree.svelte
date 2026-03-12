@@ -9,7 +9,8 @@
     moveTask, reorderTasks, deleteTask, childrenOf,
     setSelected, outlineScrollToId, rangeAnchorId
   } from '../stores/tasks';
-  import type { Task } from '../types';
+  import type { Task, SortField } from '../types';
+  import { dndzone } from 'svelte-dnd-action';
 
   // ── Selected task context ─────────────────────────────────────────────────
   // For single select use that task; for multi-select use the range anchor (last singly-clicked task)
@@ -124,11 +125,12 @@
   }
 
   // ── Column visibility / order / widths ───────────────────────────────────
-  const ALL_COLS = [
-    { id: 'due',   label: 'Due',   sortKey: 'due_date',   defaultWidth: 80,  center: false },
-    { id: 'start', label: 'Start', sortKey: 'start_date', defaultWidth: 70,  center: false },
-    { id: 'flag',  label: 'Flag',  sortKey: null,         defaultWidth: 30,  center: true  },
-    { id: 'tags',  label: 'Tags',  sortKey: null,         defaultWidth: 100, center: false },
+  const ALL_COLS: { id: string; label: string; sortKey: SortField | null; defaultWidth: number; center: boolean }[] = [
+    { id: 'due',      label: 'Due',      sortKey: 'due_date',   defaultWidth: 80,  center: false },
+    { id: 'start',    label: 'Start',    sortKey: 'start_date', defaultWidth: 70,  center: false },
+    { id: 'reminder', label: 'Reminder', sortKey: null,         defaultWidth: 90,  center: false },
+    { id: 'flag',     label: 'Flag',     sortKey: null,         defaultWidth: 30,  center: true  },
+    { id: 'tags',     label: 'Tags',     sortKey: null,         defaultWidth: 100, center: false },
   ];
 
   // Visibility
@@ -233,6 +235,21 @@
     dragColId = null; dragOverColId = null;
   }
   function onColDragEnd() { dragColId = null; dragOverColId = null; }
+
+  // ── Root-level DnD ────────────────────────────────────────────────────────
+  const flipDurationMs = 150;
+  let localRoots: Task[] = [];
+  $: localRoots = [...$rootTasks];
+
+  function handleRootConsider(e: CustomEvent<{ items: Task[] }>) {
+    localRoots = e.detail.items;
+  }
+
+  async function handleRootFinalize(e: CustomEvent<{ items: Task[] }>) {
+    localRoots = e.detail.items;
+    const pairs: [string, number][] = localRoots.map((t, i) => [t.id, i + 1]);
+    await reorderTasks(pairs);
+  }
 </script>
 
 <svelte:window on:keydown={onGlobalKeydown} />
@@ -320,9 +337,16 @@
 
 <!-- Task list (CSS vars drive column widths + order in rows) -->
 <div class="task-list" role="none" style={colVarsCss}>
-  {#each $rootTasks as task (task.id)}
-    <TaskRow task={task} depth={0} siblings={$rootTasks} visibleCols={$visibleCols} />
-  {/each}
+  <div
+    use:dndzone={{ items: localRoots, flipDurationMs }}
+    on:consider={handleRootConsider}
+    on:finalize={handleRootFinalize}
+    class="root-dnd-zone"
+  >
+    {#each localRoots as task (task.id)}
+      <TaskRow task={task} depth={0} siblings={localRoots} visibleCols={$visibleCols} />
+    {/each}
+  </div>
 
   {#if $rootTasks.length === 0}
     <div class="empty">No tasks. Click <strong>+ Task</strong> to add one.</div>
@@ -478,6 +502,11 @@
     flex: 1;
     overflow-y: auto;
     padding: 4px 2px;
+  }
+
+  .root-dnd-zone {
+    display: block;
+    min-height: 4px;
   }
 
   .empty {

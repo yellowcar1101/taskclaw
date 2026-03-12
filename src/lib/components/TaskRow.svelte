@@ -10,6 +10,7 @@
   } from '../stores/tasks';
   import type { FormatKey } from '../stores/tasks';
   import { parseCaption } from '../parsing';
+  import { dndzone } from 'svelte-dnd-action';
 
   export let task: Task;
   export let depth: number = 0;
@@ -135,6 +136,26 @@
   }
   $: startOverdue = isStartOverdue(task.start_date);
 
+  function formatReminder(val: string | null): string {
+    if (!val) return '';
+    const d = new Date(val);
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const mon = months[d.getMonth()];
+    const day = d.getDate();
+    if (val.includes('T')) {
+      const h = String(d.getHours()).padStart(2, '0');
+      const m = String(d.getMinutes()).padStart(2, '0');
+      return `${mon} ${day} ${h}:${m}`;
+    }
+    return `${mon} ${day}`;
+  }
+
+  function isReminderPast(val: string | null): boolean {
+    if (!val || task.completed_at) return false;
+    return new Date(val).getTime() < Date.now();
+  }
+  $: reminderPast = isReminderPast(task.reminder_at);
+
   // ── Theme Formatting ───────────────────────────────────────────────────────
   function taskFormatKey(t: typeof task): FormatKey {
     if (t.is_folder) return 'folder';
@@ -178,49 +199,34 @@
     fmt.highlightColor ? `background:${fmt.highlightColor}` : '',
   ].filter(Boolean).join(';');
 
-  // Drag and drop
-  let dragging = false;
-  let dragOver = false;
+  // ── svelte-dnd-action: children list for this node ──────────────────────────
+  const flipDurationMs = 150;
 
-  function onDragStart(e: DragEvent) {
-    dragging = true;
-    e.dataTransfer!.setData('taskId', task.id);
-    e.dataTransfer!.effectAllowed = 'move';
+  // dndzone requires items with an `id` field — Task already has it
+  $: dndChildren = isExpanded ? ($childrenOf.get(task.id) ?? []) : [];
+  let localChildren: Task[] = [];
+  $: localChildren = [...dndChildren];
+
+  function handleDndConsider(e: CustomEvent<{ items: Task[] }>) {
+    localChildren = e.detail.items;
   }
-  function onDragEnd() { dragging = false; }
-  function onDragOver(e: DragEvent) { e.preventDefault(); dragOver = true; e.dataTransfer!.dropEffect = 'move'; }
-  function onDragLeave() { dragOver = false; }
-  async function onDrop(e: DragEvent) {
-    e.preventDefault(); dragOver = false;
-    const srcId = e.dataTransfer!.getData('taskId');
-    if (!srcId || srcId === task.id) return;
-    await reorderTasks([[srcId, task.position - 0.5]]);
+
+  async function handleDndFinalize(e: CustomEvent<{ items: Task[] }>) {
+    localChildren = e.detail.items;
+    const pairs: [string, number][] = localChildren.map((t, i) => [t.id, i + 1]);
+    await reorderTasks(pairs);
   }
 </script>
-
-<!-- Drop zone above row -->
-<div
-  class="drop-zone"
-  class:active={dragOver}
-  on:dragover={onDragOver}
-  on:dragleave={onDragLeave}
-  on:drop={onDrop}
-  role="none"
-></div>
 
 <div
   class="task-row"
   class:selected={isSelected}
-  class:dragging
   class:flash={flashing}
   style="padding-left: {depth * 20 + 6}px;{rowStyle}"
   bind:this={rowEl}
   on:click={onClick}
   on:dblclick={startEdit}
   on:contextmenu={onContextMenu}
-  draggable={true}
-  on:dragstart={onDragStart}
-  on:dragend={onDragEnd}
   role="none"
   tabindex="-1"
 >
@@ -228,6 +234,9 @@
   {#if fmt.sidebarColor}
     <div class="sidebar-stripe" style="background:{fmt.sidebarColor}"></div>
   {/if}
+
+  <!-- Drag handle (shown on hover, used by svelte-dnd-action) -->
+  <span class="drag-handle" title="Drag to reorder">⠿</span>
 
   <!-- Expand/collapse toggle -->
   <button
@@ -299,6 +308,11 @@
     <div class="col-start">{task.start_date ? task.start_date.split('T')[0] : ''}</div>
   {/if}
 
+  <!-- Reminder column -->
+  {#if visibleCols.has('reminder')}
+    <div class="col-reminder" class:reminder-past={reminderPast}>{formatReminder(task.reminder_at)}</div>
+  {/if}
+
   <!-- Flag column — dot only -->
   {#if visibleCols.has('flag')}
     <div class="col-flag">
@@ -321,20 +335,38 @@
 
 </div>
 
-<!-- Children (recursive) -->
-{#if isExpanded && children.length > 0}
-  {#each children as child (child.id)}
-    <svelte:self task={child} depth={depth + 1} siblings={children} {visibleCols} />
-  {/each}
+<!-- Children (recursive) — wrapped in a dndzone for sibling reordering -->
+{#if isExpanded && dndChildren.length > 0}
+  <div
+    use:dndzone={{ items: localChildren, flipDurationMs }}
+    on:consider={handleDndConsider}
+    on:finalize={handleDndFinalize}
+    class="children-dnd-zone"
+  >
+    {#each localChildren as child (child.id)}
+      <svelte:self task={child} depth={depth + 1} siblings={localChildren} {visibleCols} />
+    {/each}
+  </div>
 {/if}
 
 <style>
-  .drop-zone {
-    height: 2px;
-    margin: 0;
-    transition: background 0.1s, height 0.1s;
+  .drag-handle {
+    color: var(--text-dim);
+    opacity: 0;
+    font-size: 12px;
+    cursor: grab;
+    flex-shrink: 0;
+    line-height: 1;
+    padding: 0 2px;
+    user-select: none;
+    transition: opacity 0.1s;
   }
-  .drop-zone.active { height: 4px; background: var(--accent); border-radius: 2px; }
+  .task-row:hover .drag-handle { opacity: 0.5; }
+  .drag-handle:hover { opacity: 1 !important; }
+
+  .children-dnd-zone {
+    display: block;
+  }
 
   .sidebar-stripe {
     position: absolute;
@@ -361,7 +393,6 @@
   }
   .task-row:hover { background: var(--hover); }
   .task-row.selected { background: var(--selected); border-color: var(--accent-dim); }
-  .task-row.dragging { opacity: 0.4; }
   .task-row.flash { animation: row-flash 0.8s ease; }
   @keyframes row-flash {
     0%   { background: var(--accent-dim); }
@@ -480,6 +511,16 @@
     text-align: right;
     flex-shrink: 0;
   }
+
+  .col-reminder {
+    font-size: 11px;
+    color: var(--text-dim);
+    width: var(--col-reminder-width, 90px);
+    order: var(--col-reminder-order, 11);
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .col-reminder.reminder-past { color: var(--red); }
 
   .col-flag {
     width: var(--col-flag-width, 30px);

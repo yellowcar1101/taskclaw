@@ -4,7 +4,8 @@
   import {
     contextMenu, allTasks, flags, tags, taskById,
     createTask, updateTask, deleteTask, completeTask,
-    detailTaskId, navigateToOutline, expanded, editingId
+    detailTaskId, navigateToOutline, expanded, editingId,
+    moveTask
   } from '../stores/tasks';
   import { api } from '../api';
   import type { Task } from '../types';
@@ -210,6 +211,34 @@
     const tasks = await api.getAllFlat();
     allTasks.set(tasks);
   }
+
+  // Move to… submenu
+  let moveSearchQuery = '';
+  $: moveCandidates = task
+    ? $allTasks
+        .filter(t =>
+          t.id !== task!.id &&
+          t.id !== task!.parent_id &&
+          !isDescendant(t.id, task!.id) &&
+          (moveSearchQuery === '' || t.caption.toLowerCase().includes(moveSearchQuery.toLowerCase()))
+        )
+        .slice(0, 10)
+    : [];
+
+  function isDescendant(candidateId: string, ancestorId: string): boolean {
+    let cur = $taskById.get(candidateId);
+    while (cur?.parent_id) {
+      if (cur.parent_id === ancestorId) return true;
+      cur = $taskById.get(cur.parent_id);
+    }
+    return false;
+  }
+
+  async function doMoveTo(parentId: string | null) {
+    if (!task) return;
+    await moveTask(task.id, parentId, 999999);
+    close();
+  }
 </script>
 
 {#if $contextMenu && task}
@@ -274,6 +303,40 @@
 
     <div class="item" role="menuitem" tabindex="0" on:click={doDuplicate} on:keydown>Duplicate Task</div>
     <div class="item" role="menuitem" tabindex="0" on:click={copyCaptionTree} on:keydown>Copy Tasks as Text</div>
+
+    <!-- Move to… submenu -->
+    <div class="item has-sub" role="menuitem" tabindex="0"
+      on:mouseenter={() => { moveSearchQuery = ''; openSubmenu('moveto'); }}
+      on:mouseleave={() => closeSubmenu('moveto')}
+      on:keydown
+    >
+      Move to… ▶
+      {#if activeSubmenu === 'moveto'}
+        <div class="submenu move-submenu" on:mouseenter={() => openSubmenu('moveto')} on:mouseleave={() => closeSubmenu('moveto')} role="menu" tabindex="-1">
+          <input
+            class="move-search"
+            type="text"
+            placeholder="Search tasks…"
+            bind:value={moveSearchQuery}
+            on:click|stopPropagation
+            on:keydown|stopPropagation
+          />
+          <div class="item" role="menuitem" tabindex="0" on:click={() => doMoveTo(null)} on:keydown>
+            ↑ Move to Root
+          </div>
+          <div class="sep"></div>
+          {#each moveCandidates as candidate}
+            <div class="item move-item" role="menuitem" tabindex="0" on:click={() => doMoveTo(candidate.id)} on:keydown>
+              {candidate.caption}
+            </div>
+          {/each}
+          {#if moveCandidates.length === 0}
+            <div class="item dim-text">No matches</div>
+          {/if}
+        </div>
+      {/if}
+    </div>
+
     <div class="sep"></div>
 
     <!-- Flag submenu -->
@@ -414,4 +477,34 @@
     border-radius: 50%;
     flex-shrink: 0;
   }
+
+  .move-submenu {
+    max-height: 280px;
+    overflow-y: auto;
+  }
+  .move-search {
+    display: block;
+    width: calc(100% - 16px);
+    margin: 4px 8px;
+    padding: 3px 6px;
+    background: var(--input-bg, var(--surface));
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-size: 12px;
+    outline: none;
+  }
+  .move-item {
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: block;
+  }
+  .dim-text {
+    color: var(--text-dim);
+    font-size: 11px;
+    cursor: default;
+  }
+  .dim-text:hover { background: none; }
 </style>
