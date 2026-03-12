@@ -31,7 +31,7 @@ jobs:
         run: npm ci
 
       - name: TypeScript tests
-        run: npm run test
+        run: npx svelte-kit sync && npm run test
 
       - name: Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib
