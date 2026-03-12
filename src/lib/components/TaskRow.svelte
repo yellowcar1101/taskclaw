@@ -5,8 +5,10 @@
     expanded, selected, editingId, contextMenu,
     toggleExpanded, setSelected, setSelectedRange, updateTask,
     completeTask, createTask, reorderTasks,
-    outlineScrollToId, flags, tags, childrenOf
+    outlineScrollToId, flags, tags, childrenOf,
+    themeFormatting,
   } from '../stores/tasks';
+  import type { FormatKey } from '../stores/tasks';
   import { parseCaption } from '../parsing';
 
   export let task: Task;
@@ -133,6 +135,49 @@
   }
   $: startOverdue = isStartOverdue(task.start_date);
 
+  // ── Theme Formatting ───────────────────────────────────────────────────────
+  function taskFormatKey(t: typeof task): FormatKey {
+    if (t.is_folder) return 'folder';
+    if (t.is_project) return 'project';
+    if (t.completed_at) return 'completed';
+    if (t.hide_in_views) return 'hidden';
+    return 'active';
+  }
+
+  const fontMap: Record<string, string> = {
+    system:    'system-ui, -apple-system, sans-serif',
+    segoe:     "'Segoe UI', system-ui, sans-serif",
+    inter:     'Inter, system-ui, sans-serif',
+    verdana:   'Verdana, Geneva, sans-serif',
+    trebuchet: "'Trebuchet MS', Helvetica, sans-serif",
+    calibri:   'Calibri, Candara, sans-serif',
+    roboto:    'Roboto, system-ui, sans-serif',
+    opensans:  "'Open Sans', system-ui, sans-serif",
+    georgia:   'Georgia, serif',
+    garamond:  "'Garamond', 'EB Garamond', serif",
+    palatino:  "'Palatino Linotype', Palatino, serif",
+    times:     "'Times New Roman', Times, serif",
+    mono:      "'Cascadia Code', 'Fira Code', 'Consolas', monospace",
+    consolas:  "Consolas, 'Courier New', monospace",
+    courier:   "'Courier New', Courier, monospace",
+  };
+
+  $: fmt = $themeFormatting[taskFormatKey(task)];
+
+  $: rowStyle = [
+    fmt.bgColor ? `background:${fmt.bgColor}` : '',
+    fmt.rowUnderlineColor ? `border-bottom:${fmt.rowUnderlineThickness}px solid ${fmt.rowUnderlineColor}` : '',
+    fmt.fontFamily && fontMap[fmt.fontFamily] ? `font-family:${fontMap[fmt.fontFamily]}` : '',
+  ].filter(Boolean).join(';');
+
+  $: captionStyle = [
+    fmt.fontColor ? `color:${fmt.fontColor}` : '',
+    fmt.bold ? 'font-weight:700' : '',
+    fmt.italic ? 'font-style:italic' : '',
+    fmt.strikethrough ? 'text-decoration:line-through' : '',
+    fmt.highlightColor ? `background:${fmt.highlightColor}` : '',
+  ].filter(Boolean).join(';');
+
   // Drag and drop
   let dragging = false;
   let dragOver = false;
@@ -168,7 +213,7 @@
   class:selected={isSelected}
   class:dragging
   class:flash={flashing}
-  style="padding-left: {depth * 20 + 6}px"
+  style="padding-left: {depth * 20 + 6}px;{rowStyle}"
   bind:this={rowEl}
   on:click={onClick}
   on:dblclick={startEdit}
@@ -179,6 +224,11 @@
   role="none"
   tabindex="-1"
 >
+  <!-- Sidebar color stripe -->
+  {#if fmt.sidebarColor}
+    <div class="sidebar-stripe" style="background:{fmt.sidebarColor}"></div>
+  {/if}
+
   <!-- Expand/collapse toggle -->
   <button
     class="icon-btn toggle"
@@ -209,7 +259,7 @@
         on:keydown={onKeydown}
       />
     {:else}
-      <span class="caption-text" class:starred={task.starred}>{task.caption}</span>
+      <span class="caption-text" class:starred={task.starred} style={captionStyle}>{task.caption}</span>
     {/if}
 
     <!-- Flag indicator (hidden when dedicated Flag column is visible) -->
@@ -285,6 +335,16 @@
     transition: background 0.1s, height 0.1s;
   }
   .drop-zone.active { height: 4px; background: var(--accent); border-radius: 2px; }
+
+  .sidebar-stripe {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    border-radius: 3px 0 0 3px;
+    pointer-events: none;
+  }
 
   .task-row {
     display: flex;

@@ -1,11 +1,28 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { showPrefs, flags, tags } from '../stores/tasks';
+  import { showPrefs, flags, tags, themeFormatting } from '../stores/tasks';
   import { api } from '../api';
   import ColorPicker from './ColorPicker.svelte';
   import type { Flag, Tag } from '../types';
+  import type { TaskTypeFormat, FormatKey } from '../stores/tasks';
 
-  let activeTab: 'general' | 'flags' | 'tags' | 'app' | 'sync' | 'api' = 'general';
+  let activeTab: 'general' | 'flags' | 'tags' | 'app' | 'sync' | 'api' | 'formatting' = 'general';
+
+  // ── Theme Formatting ──────────────────────────────────────────────────────
+  const formatSections: { key: FormatKey; label: string }[] = [
+    { key: 'active',    label: 'Active tasks format' },
+    { key: 'project',   label: 'Projects format' },
+    { key: 'folder',    label: 'Folders format' },
+    { key: 'completed', label: 'Completed tasks format' },
+    { key: 'hidden',    label: 'Hidden in todo format' },
+  ];
+
+  function updateFmt(key: FormatKey, field: keyof TaskTypeFormat, value: unknown) {
+    themeFormatting.update(tf => ({
+      ...tf,
+      [key]: { ...tf[key], [field]: value },
+    }));
+  }
   let error = '';
 
   // ── App appearance settings ──────────────────────────────────────────────────
@@ -286,7 +303,8 @@
       <button class="tab" class:active={activeTab === 'tags'}    on:click={() => activeTab = 'tags'}>Tags</button>
       <button class="tab" class:active={activeTab === 'app'}     on:click={() => activeTab = 'app'}>Appearance</button>
       <button class="tab" class:active={activeTab === 'sync'}    on:click={() => activeTab = 'sync'}>Sync</button>
-      <button class="tab" class:active={activeTab === 'api'}     on:click={() => activeTab = 'api'}>API</button>
+      <button class="tab" class:active={activeTab === 'api'}        on:click={() => activeTab = 'api'}>API</button>
+      <button class="tab" class:active={activeTab === 'formatting'} on:click={() => activeTab = 'formatting'}>Formatting</button>
     </div>
 
     {#if error}
@@ -600,6 +618,221 @@
         </div>
       {/if}
 
+      <!-- FORMATTING TAB -->
+      {#if activeTab === 'formatting'}
+        <div class="section-hint">
+          Control font, color, and row styling for each task type. Changes apply immediately.
+        </div>
+
+        {#each formatSections as section}
+          <details class="fmt-section">
+            <summary class="fmt-summary">{section.label}</summary>
+            <div class="fmt-body">
+
+              <!-- Font group -->
+              <div class="fmt-group-label">Font</div>
+
+              <div class="info-row">
+                <span class="info-label">Font family</span>
+                <select
+                  class="info-select"
+                  value={$themeFormatting[section.key].fontFamily}
+                  on:change={e => updateFmt(section.key, 'fontFamily', (e.target as HTMLSelectElement).value)}
+                >
+                  <option value="">Default</option>
+                  <optgroup label="Sans-serif">
+                    <option value="system">System UI</option>
+                    <option value="segoe">Segoe UI</option>
+                    <option value="inter">Inter</option>
+                    <option value="verdana">Verdana</option>
+                    <option value="trebuchet">Trebuchet MS</option>
+                    <option value="calibri">Calibri</option>
+                    <option value="roboto">Roboto</option>
+                    <option value="opensans">Open Sans</option>
+                  </optgroup>
+                  <optgroup label="Serif">
+                    <option value="georgia">Georgia</option>
+                    <option value="garamond">Garamond</option>
+                    <option value="palatino">Palatino Linotype</option>
+                    <option value="times">Times New Roman</option>
+                  </optgroup>
+                  <optgroup label="Monospace">
+                    <option value="mono">Cascadia Code / Fira Code</option>
+                    <option value="consolas">Consolas</option>
+                    <option value="courier">Courier New</option>
+                  </optgroup>
+                </select>
+              </div>
+
+              <div class="info-row">
+                <span class="info-label">Font color</span>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <ColorPicker
+                    value={$themeFormatting[section.key].fontColor}
+                    label="Font color"
+                    on:change={e => updateFmt(section.key, 'fontColor', e.detail)}
+                  />
+                  <input
+                    type="text"
+                    class="hex-input"
+                    placeholder="#rrggbb"
+                    value={$themeFormatting[section.key].fontColor}
+                    on:change={e => updateFmt(section.key, 'fontColor', (e.target as HTMLInputElement).value)}
+                  />
+                </div>
+              </div>
+
+              <div class="info-row">
+                <span class="info-label">Style</span>
+                <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+                  <label class="fmt-check">
+                    <input type="checkbox"
+                      checked={$themeFormatting[section.key].bold}
+                      on:change={e => updateFmt(section.key, 'bold', (e.target as HTMLInputElement).checked)}
+                    /> Bold
+                  </label>
+                  <label class="fmt-check">
+                    <input type="checkbox"
+                      checked={$themeFormatting[section.key].italic}
+                      on:change={e => updateFmt(section.key, 'italic', (e.target as HTMLInputElement).checked)}
+                    /> Italic
+                  </label>
+                  <label class="fmt-check">
+                    <input type="checkbox"
+                      checked={$themeFormatting[section.key].strikethrough}
+                      on:change={e => updateFmt(section.key, 'strikethrough', (e.target as HTMLInputElement).checked)}
+                    /> Strikethrough
+                  </label>
+                </div>
+              </div>
+
+              <div class="info-row">
+                <span class="info-label">Underline color</span>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <ColorPicker
+                    value={$themeFormatting[section.key].underlineColor}
+                    label="Underline color"
+                    on:change={e => updateFmt(section.key, 'underlineColor', e.detail)}
+                  />
+                  <input
+                    type="text"
+                    class="hex-input"
+                    placeholder="#rrggbb"
+                    value={$themeFormatting[section.key].underlineColor}
+                    on:change={e => updateFmt(section.key, 'underlineColor', (e.target as HTMLInputElement).value)}
+                  />
+                </div>
+              </div>
+
+              <!-- Background group -->
+              <div class="fmt-group-label" style="margin-top:10px">Background</div>
+
+              <div class="info-row">
+                <span class="info-label">Background color</span>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <ColorPicker
+                    value={$themeFormatting[section.key].bgColor}
+                    label="Background color"
+                    on:change={e => updateFmt(section.key, 'bgColor', e.detail)}
+                  />
+                  <input
+                    type="text"
+                    class="hex-input"
+                    placeholder="#rrggbb"
+                    value={$themeFormatting[section.key].bgColor}
+                    on:change={e => updateFmt(section.key, 'bgColor', (e.target as HTMLInputElement).value)}
+                  />
+                </div>
+              </div>
+
+              <!-- Highlight group -->
+              <div class="fmt-group-label" style="margin-top:10px">Highlight &amp; Row</div>
+
+              <div class="info-row">
+                <span class="info-label">Highlight color</span>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <ColorPicker
+                    value={$themeFormatting[section.key].highlightColor}
+                    label="Highlight color"
+                    on:change={e => updateFmt(section.key, 'highlightColor', e.detail)}
+                  />
+                  <input
+                    type="text"
+                    class="hex-input"
+                    placeholder="#rrggbb"
+                    value={$themeFormatting[section.key].highlightColor}
+                    on:change={e => updateFmt(section.key, 'highlightColor', (e.target as HTMLInputElement).value)}
+                  />
+                </div>
+              </div>
+
+              <div class="info-row">
+                <span class="info-label">Sidebar color</span>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <ColorPicker
+                    value={$themeFormatting[section.key].sidebarColor}
+                    label="Sidebar color"
+                    on:change={e => updateFmt(section.key, 'sidebarColor', e.detail)}
+                  />
+                  <input
+                    type="text"
+                    class="hex-input"
+                    placeholder="#rrggbb"
+                    value={$themeFormatting[section.key].sidebarColor}
+                    on:change={e => updateFmt(section.key, 'sidebarColor', (e.target as HTMLInputElement).value)}
+                  />
+                </div>
+              </div>
+
+              <div class="info-row">
+                <span class="info-label">Row underline color</span>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <ColorPicker
+                    value={$themeFormatting[section.key].rowUnderlineColor}
+                    label="Row underline color"
+                    on:change={e => updateFmt(section.key, 'rowUnderlineColor', e.detail)}
+                  />
+                  <input
+                    type="text"
+                    class="hex-input"
+                    placeholder="#rrggbb"
+                    value={$themeFormatting[section.key].rowUnderlineColor}
+                    on:change={e => updateFmt(section.key, 'rowUnderlineColor', (e.target as HTMLInputElement).value)}
+                  />
+                </div>
+              </div>
+
+              <div class="info-row">
+                <span class="info-label">Row underline thickness</span>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <input
+                    type="number"
+                    min="1" max="8"
+                    class="name-input"
+                    style="max-width:60px"
+                    value={$themeFormatting[section.key].rowUnderlineThickness}
+                    on:change={e => updateFmt(section.key, 'rowUnderlineThickness', Number((e.target as HTMLInputElement).value))}
+                  />
+                  <span class="info-value dim">px</span>
+                </div>
+              </div>
+
+              <div class="info-row">
+                <span class="info-label">Indent underline</span>
+                <label class="fmt-check">
+                  <input
+                    type="checkbox"
+                    checked={$themeFormatting[section.key].rowUnderlineIndent}
+                    on:change={e => updateFmt(section.key, 'rowUnderlineIndent', (e.target as HTMLInputElement).checked)}
+                  /> Underline starts after indent
+                </label>
+              </div>
+
+            </div>
+          </details>
+        {/each}
+      {/if}
+
     </div>
   </div>
 </div>
@@ -864,4 +1097,73 @@
     min-width: 0;
   }
   .folder-path.unset { color: var(--text-dim); font-style: italic; }
+
+  /* ── Formatting tab ────────────────────────────────────────────────────── */
+  .fmt-section {
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    margin-bottom: 6px;
+    overflow: hidden;
+  }
+  .fmt-summary {
+    cursor: pointer;
+    padding: 7px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    background: var(--hover-btn);
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .fmt-summary::-webkit-details-marker { display: none; }
+  .fmt-summary::before {
+    content: '▸';
+    font-size: 10px;
+    color: var(--text-dim);
+    transition: transform 0.15s;
+    display: inline-block;
+  }
+  details[open] > .fmt-summary::before { transform: rotate(90deg); }
+  .fmt-summary:hover { background: var(--hover); }
+
+  .fmt-body {
+    padding: 8px 10px 10px;
+    background: var(--surface);
+  }
+
+  .fmt-group-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+    padding: 0 4px;
+  }
+
+  .fmt-check {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--text);
+    accent-color: var(--accent);
+  }
+
+  .hex-input {
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    width: 72px;
+    outline: none;
+    font-family: monospace;
+  }
+  .hex-input:focus { border-color: var(--accent); }
 </style>

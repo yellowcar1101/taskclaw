@@ -3,10 +3,17 @@
   import { listen, emit } from '@tauri-apps/api/event';
   import { invoke } from '@tauri-apps/api/core';
   import { allTasks, updateTask } from '../stores/tasks';
-  import { formatDateDisplay } from '../parsing';
   import type { Task } from '../types';
 
-  interface ReminderItem { id: string; caption: string; dueLabel: string; }
+  interface ReminderItem {
+    id: string;
+    caption: string;
+    flagColor: string | null;
+    flagName: string | null;
+    startDate: string | null;
+    dueDate: string | null;
+    starred: boolean;
+  }
 
   let pendingReminders: ReminderItem[] = [];
   let interval: ReturnType<typeof setInterval>;
@@ -22,7 +29,7 @@
     localStorage.setItem('taskclaw_snoozed', JSON.stringify(map));
   }
 
-  // ── Reminder check ────────────────────────────────────────────────────────
+  // ── Reminder check — only called by the interval timer ───────────────────
   async function checkReminders() {
     const now = Date.now();
     const snoozed = getSnoozed();
@@ -40,7 +47,15 @@
       if (!task.reminder_at.includes('T')) continue; // require explicit time component
       if (new Date(task.reminder_at).getTime() > now) continue;
       if (snoozed[task.id]) continue;
-      due.push({ id: task.id, caption: task.caption, dueLabel: formatDateDisplay(task.due_date) });
+      due.push({
+        id: task.id,
+        caption: task.caption,
+        flagColor: task.flag?.color ?? null,
+        flagName: task.flag?.name ?? null,
+        startDate: task.start_date,
+        dueDate: task.due_date,
+        starred: task.starred,
+      });
     }
 
     if (due.length > 0) {
@@ -52,7 +67,22 @@
     }
   }
 
+  // ── Remove cleared reminders reactively (no show_reminder_window call) ───
+  $: if (pendingReminders.length > 0) {
+    const ids = new Set($allTasks.filter(t => !!t.reminder_at).map(t => t.id));
+    const next = pendingReminders.filter(r => ids.has(r.id));
+    if (next.length !== pendingReminders.length) {
+      pendingReminders = next;
+      if (next.length === 0) {
+        invoke('hide_reminder_window').catch(() => {});
+      } else {
+        emit('reminders:update', next).catch(() => {});
+      }
+    }
+  }
+
   onMount(async () => {
+    // Run once on mount (not on every task change)
     checkReminders();
     interval = setInterval(checkReminders, 30_000);
 
@@ -62,20 +92,30 @@
       if (pendingReminders.length > 0) emit('reminders:update', pendingReminders);
     });
 
-    // Dismiss: clear reminder_at in DB
+    // Dismiss: clear reminder_at in DB and remove from list
     unlistenDismiss = await listen<string>('reminder:dismiss', async (e) => {
       const id = e.payload;
       await updateTask(id, { reminder_at: '' } as any);
       pendingReminders = pendingReminders.filter(r => r.id !== id);
+      if (pendingReminders.length === 0) {
+        invoke('hide_reminder_window').catch(() => {});
+      } else {
+        emit('reminders:update', pendingReminders).catch(() => {});
+      }
     });
 
-    // Snooze: record in localStorage
+    // Snooze: record in localStorage and remove from list
     unlistenSnooze = await listen<{ id: string; minutes: number }>('reminder:snooze', (e) => {
       const { id, minutes } = e.payload;
       const map = getSnoozed();
       map[id] = new Date(Date.now() + minutes * 60_000).toISOString();
       setSnoozed(map);
       pendingReminders = pendingReminders.filter(r => r.id !== id);
+      if (pendingReminders.length === 0) {
+        invoke('hide_reminder_window').catch(() => {});
+      } else {
+        emit('reminders:update', pendingReminders).catch(() => {});
+      }
     });
   });
 
@@ -85,9 +125,6 @@
     unlistenDismiss?.();
     unlistenSnooze?.();
   });
-
-  // Re-check whenever task list changes
-  $: { $allTasks; if (interval) checkReminders(); }
 </script>
 
 <!-- This component renders nothing in the main window -->

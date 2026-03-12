@@ -277,3 +277,83 @@ export function navigateToOutline(id: string) {
 export function expandToTask(id: string) {
   navigateToOutline(id);
 }
+
+// ── Theme Formatting Store ─────────────────────────────────────────────────
+
+export interface TaskTypeFormat {
+  fontFamily: string;
+  fontColor: string;
+  bold: boolean;
+  italic: boolean;
+  strikethrough: boolean;
+  underlineColor: string;
+  bgColor: string;
+  highlightColor: string;
+  sidebarColor: string;
+  rowUnderlineColor: string;
+  rowUnderlineThickness: number;
+  rowUnderlineIndent: boolean;
+}
+
+export type FormatKey = 'active' | 'project' | 'folder' | 'completed' | 'hidden';
+
+export interface ThemeFormatting {
+  active: TaskTypeFormat;
+  project: TaskTypeFormat;
+  folder: TaskTypeFormat;
+  completed: TaskTypeFormat;
+  hidden: TaskTypeFormat;
+}
+
+function defaultTaskTypeFormat(): TaskTypeFormat {
+  return {
+    fontFamily: '',
+    fontColor: '',
+    bold: false,
+    italic: false,
+    strikethrough: false,
+    underlineColor: '',
+    bgColor: '',
+    highlightColor: '',
+    sidebarColor: '',
+    rowUnderlineColor: '',
+    rowUnderlineThickness: 1,
+    rowUnderlineIndent: false,
+  };
+}
+
+function defaultThemeFormatting(): ThemeFormatting {
+  return {
+    active:    defaultTaskTypeFormat(),
+    project:   defaultTaskTypeFormat(),
+    folder:    defaultTaskTypeFormat(),
+    completed: defaultTaskTypeFormat(),
+    hidden:    defaultTaskTypeFormat(),
+  };
+}
+
+function loadThemeFormatting(): ThemeFormatting {
+  try {
+    const raw = localStorage.getItem('theme_formatting');
+    if (!raw) return defaultThemeFormatting();
+    const parsed = JSON.parse(raw) as Partial<ThemeFormatting>;
+    const def = defaultThemeFormatting();
+    // Merge each key so new fields get defaults
+    for (const k of Object.keys(def) as FormatKey[]) {
+      if (parsed[k]) {
+        (def as any)[k] = { ...defaultTaskTypeFormat(), ...(parsed[k] as any) };
+      }
+    }
+    return def;
+  } catch {
+    return defaultThemeFormatting();
+  }
+}
+
+export const themeFormatting = writable<ThemeFormatting>(loadThemeFormatting());
+
+themeFormatting.subscribe(val => {
+  try {
+    localStorage.setItem('theme_formatting', JSON.stringify(val));
+  } catch {}
+});
