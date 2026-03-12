@@ -418,7 +418,7 @@ pub fn complete_branch(state: State<DbState>, id: String, completed: bool) -> Re
         UPDATE tasks SET completed_at = ?2, updated_at = ?3
         WHERE id IN (SELECT id FROM branch)",
         params![id, completed_at_val, now],
-    ).map_err(|e| e.to_string())
+    ).map(|_| ()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
