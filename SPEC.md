@@ -1,6 +1,6 @@
 # TaskClaw — Full Product Specification
 
-> Version: 2.0 | App version: 0.3.0 | Status: Phase 2 complete — active development
+> Version: 2.0 | App version: 0.4.0 | Status: UAT cycle 1 in progress — 2026-03-12
 > Audience: Senior developer. This document is the single source of truth. Build exactly what is described; do not add features not listed; do not omit features that are listed.
 
 ---
@@ -2272,6 +2272,15 @@ Build and test one feature at a time. Do not proceed to the next until the curre
 | 15 | GDrive OAuth sync + Web API + PlanView + ViewSettings + Prefs tabs | `commands/sync.rs`, `commands/webapi.rs`, `commands/files.rs` | `Prefs.svelte`, `PlanView.svelte`, `ViewSettingsDialog.svelte`, `SyncBar` | ✅ Done |
 | 16 | Encryption | `Cargo.toml`, `db.rs`, `commands/` | `LockScreen`, Prefs | ⏸ Parked — see §22 |
 
+### UAT Cycle 1 fixes (2026-03-12, commits `c7305e2`→`ae39e51`)
+
+| Step | Feature | Commits | Status |
+|---|---|---|---|
+| UAT-1 | Security audit + QA fixes (14 issues) | `c7305e2` | ✅ Done |
+| UAT-2 | Reminder window critical fix + Theme Formatting prefs tab | `3449de6` | ✅ Done |
+| UAT-3 | Reminders column, multi-select, DnD, starred view filter, Move to… in views | `ab98b4d` | ✅ Done |
+| UAT-4 | Empty caption on +Task, 2-col General prefs, compact flag/tag, draggable notes | `ae39e51` | ✅ Done |
+
 ### Parked features (not yet scheduled)
 
 | Feature | Notes |
@@ -2319,3 +2328,143 @@ Reviewed against `94bd804`. GitHub issue: [#2](https://github.com/yellowcar1101/
 | LOW-1 | Low | No Unix file permissions on DB file (0o600) | ⏸ Parked |
 | LOW-2 | Low | `get_all_settings` returned credential keys to frontend | Fixed — credential keys excluded from query |
 | LOW-5 | Low | No TCP read timeout on OAuth redirect listener | ⏸ Parked |
+
+### 25.3 UAT Round 1 — 2026-03-12 (static code review, commit `ae39e51`)
+
+Full static code review across all feature areas. GitHub issues: [#3](https://github.com/yellowcar1101/taskclaw/issues/3)–[#13](https://github.com/yellowcar1101/taskclaw/issues/13)
+
+> **What static UAT covers:** logic correctness, end-to-end wiring (event → handler → store → Rust → DB), security patterns, missing fields, structural bugs, broken reactive statements.
+>
+> **What it does NOT cover:** runtime rendering bugs, Windows-specific behaviour, race conditions under real timing, visual layout in practice. Those are caught by Gabriel's manual UAT.
+
+| Area | Result | Notes |
+|---|---|---|
+| Task CRUD | ✅ Pass | Create (empty caption), inline edit, delete, duplicate, move — all wired |
+| Task Tree | ✅ Pass | All columns (incl. reminder), column resize/reorder, DnD (svelte-dnd-action), multi-select |
+| Task Detail | ✅ Pass | All fields, notes resize handle, flag/tag compact, XSS-safe markdown |
+| Reminders | ⚠️ Minor | 30s interval poll — new reminders appear within 30s max (acceptable) |
+| Views | ✅ Pass | Starred filter correct, PlanView context menu, Move to… |
+| Preferences | ✅ Pass | General 2-col, Appearance, Formatting (5 sections), Flags, Tags, Sync, API |
+| Recurrence | ✅ Pass | All frequencies, monthly modes, advanced options, no SQL injection |
+| Rapid Input | ✅ Pass | Multi-line parse, hierarchy, parent picker |
+| GDrive / Web API | ✅ Pass | CSRF state, token required, connection limit, CORS localhost-only |
+| Security | ✅ Pass | No lock().unwrap(), parameterized SQL, CSP, XSS fix, setting key allowlist |
+
+Minor concerns (non-blocking):
+- Column order localStorage not validated for stale IDs after future column additions
+- Notes blur save has no debounce (harmless, normal use won't notice)
+
+---
+
+## 26. Test Automation Strategy
+
+### 26.1 Current state
+Zero automated tests. All testing is manual UAT by Gabriel. This creates risk: every new feature must be manually re-tested to catch regressions.
+
+### 26.2 What static code review catches
+The AI assistant performs static code review as a form of UAT:
+- Logic correctness — traces event → handler → store → Rust → DB
+- Structural bugs — broken reactive statements, wrong return types, missing wiring
+- Security patterns — SQL injection, lock handling, CSP, XSS
+- Missing fields or components
+
+**What it misses:** runtime rendering bugs, Windows-specific behaviour, visual layout, race conditions under real load.
+
+### 26.3 Recommended test automation layers
+
+#### Layer 1 — Rust unit tests (`cargo test`)
+Test each Tauri command in isolation against an in-memory SQLite DB. No UI involved.
+
+```rust
+// Example: src-tauri/src/commands/tests.rs
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    fn test_conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        crate::db::run_migrations(&conn).unwrap();
+        conn
+    }
+
+    #[test]
+    fn test_create_task_empty_caption_rejected() {
+        // ...
+    }
+
+    #[test]
+    fn test_delete_task_recursive_removes_children() {
+        // ...
+    }
+}
+```
+
+**Covers:** all `commands/tasks.rs`, `flags.rs`, `sync.rs`, `webapi.rs` business logic.
+**Effort:** ~2 days to add baseline coverage for CRUD + recurrence.
+
+#### Layer 2 — TypeScript unit tests (Vitest)
+Test store logic and parsing functions without Tauri.
+
+```bash
+npm install -D vitest @testing-library/svelte
+```
+
+```typescript
+// src/lib/parsing.test.ts
+import { describe, it, expect } from 'vitest';
+import { parseCaption } from './parsing';
+
+describe('parseCaption', () => {
+  it('extracts due date from !Jun15', () => {
+    const r = parseCaption('Buy milk !Jun15');
+    expect(r.dueDate).toBe('2026-06-15');
+  });
+});
+```
+
+**Covers:** `parsing.ts` (NLP date parser — high value, complex logic), `planFilter.ts` (view filters), store transformations.
+**Effort:** ~1 day.
+
+#### Layer 3 — End-to-end UI tests (tauri-driver + WebdriverIO)
+Actually launches the compiled `.exe`, drives it with WebDriver, asserts on UI state.
+
+```bash
+# Windows runner
+npm install -D @wdio/cli webdriverio tauri-driver
+```
+
+```typescript
+// tests/e2e/task-create.test.ts
+it('creates task with empty caption field', async () => {
+  await $('[data-testid="add-task-btn"]').click();
+  const caption = await $('[data-testid="task-caption-input"]');
+  expect(await caption.getValue()).toBe('');
+});
+```
+
+**Covers:** critical user paths — create task, complete task, reminder fires, DnD reorder.
+**Effort:** ~3 days to set up + write 10–15 critical path tests.
+**Prerequisite:** add `data-testid` attributes to key elements.
+
+### 26.4 Recommended implementation order
+
+| Priority | Layer | Value | Effort |
+|---|---|---|---|
+| 1 | Rust unit tests | Highest — catches backend bugs before build | ~2 days |
+| 2 | Vitest for parsing.ts | High — complex NLP logic, easy to break | ~1 day |
+| 3 | tauri-driver E2E | Highest coverage — catches what Gabriel catches | ~3 days |
+
+### 26.5 CI integration
+Once tests exist, add to `.github/workflows/release.yml`:
+
+```yaml
+- name: Run Rust tests
+  run: cargo test --manifest-path src-tauri/Cargo.toml
+
+- name: Run TypeScript tests
+  run: npm run test
+```
+
+E2E tests run separately on `windows-latest` after build (they need the compiled exe).
+
